@@ -350,6 +350,44 @@ FetchOutcome ResolveVanity(HttpClient& http, const std::string& apiKey,
     return outcome;
 }
 
+FetchOutcome FetchProfilesByIds(HttpClient& http, const std::string& apiKey,
+                                const std::vector<std::string>& steamids, std::vector<Profile>& out) {
+    FetchOutcome outcome;
+    out.clear();
+    if (apiKey.empty()) {
+        outcome.status = FetchStatus::InvalidApiKey;
+        outcome.message = DefaultStatusMessage(FetchStatus::InvalidApiKey);
+        return outcome;
+    }
+    if (steamids.empty()) {
+        outcome.status = FetchStatus::Ok;
+        return outcome;
+    }
+
+    // GetPlayerSummaries acepta como maximo 100 identificadores por llamada.
+    constexpr size_t kBatch = 100;
+    for (size_t start = 0; start < steamids.size(); start += kBatch) {
+        const size_t end = std::min(steamids.size(), start + kBatch);
+        const std::vector<std::string> chunk(steamids.begin() + static_cast<std::ptrdiff_t>(start),
+                                             steamids.begin() + static_cast<std::ptrdiff_t>(end));
+        const HttpResponse response = http.Get(PlayerSummariesUrl(apiKey, chunk));
+        if (!response.Ok()) {
+            outcome.status = StatusFromHttp(response, outcome.message);
+            return outcome;
+        }
+        std::vector<Profile> players;
+        const FetchStatus status = ParsePlayerSummariesListJson(response.body, players, outcome.message);
+        if (status != FetchStatus::Ok) {
+            outcome.status = status;
+            return outcome;
+        }
+        for (Profile& player : players) out.push_back(std::move(player));
+    }
+
+    outcome.status = FetchStatus::Ok;
+    return outcome;
+}
+
 FetchOutcome FetchFriendProfiles(HttpClient& http, const std::string& apiKey,
                                  const std::string& steamid64, std::vector<Profile>& out) {
     FetchOutcome outcome;
@@ -386,28 +424,10 @@ FetchOutcome FetchFriendProfiles(HttpClient& http, const std::string& apiKey,
         return outcome;
     }
 
-    // GetPlayerSummaries acepta como maximo 100 identificadores por llamada.
-    constexpr size_t kBatch = 100;
-    for (size_t start = 0; start < ids.size(); start += kBatch) {
-        const size_t end = std::min(ids.size(), start + kBatch);
-        const std::vector<std::string> chunk(ids.begin() + static_cast<std::ptrdiff_t>(start),
-                                             ids.begin() + static_cast<std::ptrdiff_t>(end));
-        const HttpResponse response = http.Get(PlayerSummariesUrl(apiKey, chunk));
-        if (!response.Ok()) {
-            outcome.status = StatusFromHttp(response, outcome.message);
-            return outcome;
-        }
-        std::vector<Profile> players;
-        const FetchStatus status = ParsePlayerSummariesListJson(response.body, players, outcome.message);
-        if (status != FetchStatus::Ok) {
-            outcome.status = status;
-            return outcome;
-        }
-        for (Profile& player : players) out.push_back(std::move(player));
+    outcome = FetchProfilesByIds(http, apiKey, ids, out);
+    if (outcome.status == FetchStatus::Ok) {
+        outcome.message = "Amigos encontrados: " + std::to_string(out.size()) + ".";
     }
-
-    outcome.status = FetchStatus::Ok;
-    outcome.message = "Amigos encontrados: " + std::to_string(out.size()) + ".";
     return outcome;
 }
 

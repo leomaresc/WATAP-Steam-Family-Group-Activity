@@ -1,13 +1,18 @@
-// Integracion con las interfaces publicas documentadas de Steam Web API.
+// Integracion con las interfaces de Steam Web API.
 //
-// Endpoints utilizados (solo interfaces oficiales publicas):
+// Endpoints utilizados:
 //   * IPlayerService/GetRecentlyPlayedGames/v1  -> actividad reciente por perfil
 //   * ISteamUser/GetPlayerSummaries/v2          -> nombre publico y avatar
 //   * ISteamUser/ResolveVanityURL/v1            -> resolucion de URL/nombre de perfil
 //   * ISteamUser/GetFriendList/v1               -> lista de amigos (importar integrantes)
 //
-// No se usa scraping, cookies ni endpoints internos. La API entrega minutos
-// agregados de las ultimas dos semanas, nunca un historial de sesiones con fechas.
+// Nota: el grupo familiar (Steam Families) NO se obtiene de la Web API porque
+// IFamilyGroupsService exige un token de sesion, no una clave de API. Sus
+// miembros se leen del cliente local (ver steam/local_steam.h) y aqui solo se
+// piden sus nombres/avatares con GetPlayerSummaries.
+//
+// No se usa scraping ni cookies. La API entrega minutos agregados de las ultimas
+// dos semanas, nunca un historial de sesiones con fechas.
 #pragma once
 
 #include <cstdint>
@@ -62,6 +67,10 @@ FetchOutcome FetchProfileActivity(HttpClient& http, const std::string& apiKey,
 // Resuelve un nombre vanity a SteamID64.
 FetchOutcome ResolveVanity(HttpClient& http, const std::string& apiKey,
                            const std::string& vanity, std::string& steamidOut);
+
+// Descarga nombre publico y avatar de una lista de SteamID64 (por lotes de 100).
+FetchOutcome FetchProfilesByIds(HttpClient& http, const std::string& apiKey,
+                                const std::vector<std::string>& steamids, std::vector<Profile>& out);
 
 // Descarga la lista de amigos de `steamid64` con su nombre publico y avatar.
 // Requiere que la lista de amigos sea publica; si es privada devuelve

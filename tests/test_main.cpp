@@ -459,6 +459,85 @@ void TestUrls() {
           "resumenes por lotes separados por coma");
 }
 
+// --- Grupo familiar de Steam (leido del cliente local) ---
+void TestLocalFamilyGroup() {
+    Section("Grupo familiar del cliente de Steam");
+
+    // Recorte realista de localconfig.vdf con un bloque FamilyGroup.
+    const std::string vdf = R"("UserLocalConfigStore"
+{
+	"Software"
+	{
+		"Valve"
+		{
+			"Steam"
+			{
+				"RecentGame"		"730"
+			}
+		}
+	}
+	"FamilyGroup"
+	{
+		"version"		"1"
+		"groupid"		"7678462"
+		"name"		"TheFamily"
+		"country"		""
+		"role"		"1"
+		"members"
+		{
+			"0"
+			{
+				"accountid"		"266486772"
+				"role"		"1"
+			}
+			"1"
+			{
+				"accountid"		"123906737"
+				"role"		"1"
+			}
+			"2"
+			{
+				"accountid"		"0"
+				"role"		"1"
+			}
+			"3"
+			{
+				"role"		"1"
+			}
+		}
+	}
+	"nettickets"
+	{
+		"304930"		"0100"
+	}
+})";
+
+    srp::steam::LocalFamilyGroup group;
+    Check(srp::steam::ParseLocalFamilyGroupVdf(vdf, group), "bloque FamilyGroup analizado");
+    CheckEq(group.groupId, "7678462", "identificador del grupo familiar");
+    CheckEq(group.name, "TheFamily", "nombre del grupo familiar");
+    CheckEqInt(static_cast<long long>(group.memberSteamIds.size()), 2,
+               "solo cuentan los miembros con accountid valido");
+    // accountid 266486772 -> SteamID64 = base + accountid
+    CheckEq(group.memberSteamIds[0], "76561198226752500", "conversion de accountid a SteamID64");
+    // La cuenta propia ya detectada: 123906737 -> 76561198084172465
+    CheckEq(group.memberSteamIds[1], "76561198084172465", "conversion de la cuenta propia");
+
+    srp::steam::LocalFamilyGroup none;
+    Check(!srp::steam::ParseLocalFamilyGroupVdf(
+              "\"UserLocalConfigStore\"\n{\n\t\"Software\"\n\t{\n\t}\n}", none),
+          "sin bloque FamilyGroup no hay grupo");
+
+    srp::steam::LocalFamilyGroup bad;
+    Check(!srp::steam::ParseLocalFamilyGroupVdf("esto no es un vdf", bad),
+          "contenido no valido no produce grupo");
+
+    const std::filesystem::path path =
+        srp::steam::SteamLocalConfigPath("C:\\Steam", "123906737");
+    CheckEq(path.filename().string(), "localconfig.vdf", "nombre del archivo de configuracion local");
+    Check(path.string().find("userdata") != std::string::npos, "ruta dentro de userdata");
+}
+
 }  // namespace
 
 int main() {
@@ -475,6 +554,7 @@ int main() {
     TestCache();
     TestDemoData();
     TestFriendParsing();
+    TestLocalFamilyGroup();
     TestLocalSteam();
     TestUrls();
 

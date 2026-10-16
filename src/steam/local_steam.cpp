@@ -2,10 +2,12 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <vector>
 
+#include "common/format.h"
 #include "common/paths.h"
 
 namespace srp::steam {
@@ -69,6 +71,121 @@ bool IsSteamId64Token(const std::string& value) {
 std::string LowerAscii(std::string value) {
     for (char& c : value) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return value;
+}
+
+// --- Analizador VDF en arbol (necesario para localconfig.vdf, muy anidado) ---
+struct VdfNode {
+    std::string scalar;                                    // valor si el nodo es una hoja
+    std::vector<std::pair<std::string, VdfNode>> children;  // hijos si el nodo es un bloque
+    bool block = false;
+
+    // Busca un hijo por clave (sin distinguir mayusculas, como tolera Steam).
+    const VdfNode* Find(const std::string& key) const {
+        const std::string target = LowerAscii(key);
+        for (const auto& entry : children) {
+            if (LowerAscii(entry.first) == target) return &entry.second;
+        }
+        return nullptr;
+    }
+
+    // Busca una clave en todo el subarbol (por si Valve reubica el bloque).
+    const VdfNode* FindRecursive(const std::string& key) const {
+        if (const VdfNode* direct = Find(key)) return direct;
+        for (const auto& entry : children) {
+            if (!entry.second.block) continue;
+            if (const VdfNode* nested = entry.second.FindRecursive(key)) return nested;
+        }
+        return nullptr;
+    }
+};
+
+// Lector recursivo de VDF: cadenas entre comillas, llaves y comentarios de linea.
+class VdfReader {
+public:
+    explicit VdfReader(const std::string& text) : text_(text) {}
+
+    // Lee el documento: una clave raiz seguida de un bloque.
+    bool ParseDocument(VdfNode& root) {
+        std::string key;
+        if (!ReadString(key)) return false;
+        if (!Consume('{')) return false;
+        return ParseBlock(root);
+    }
+
+private:
+    const std::string& text_;
+    size_t pos_ = 0;
+
+    void SkipSpace() {
+        while (pos_ < text_.size()) {
+            const char c = text_[pos_];
+            if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+                ++pos_;
+                continue;
+            }
+            if (c == '/' && pos_ + 1 < text_.size() && text_[pos_ + 1] == '/') {
+                while (pos_ < text_.size() && text_[pos_] != '\n') ++pos_;
+                continue;
+            }
+            break;
+        }
+    }
+
+    bool Consume(char c) {
+        SkipSpace();
+        if (pos_ < text_.size() && text_[pos_] == c) {
+            ++pos_;
+            return true;
+        }
+        return false;
+    }
+
+    bool ReadString(std::string& out) {
+        SkipSpace();
+        if (pos_ >= text_.size() || text_[pos_] != '"') return false;
+        ++pos_;
+        out.clear();
+        while (pos_ < text_.size() && text_[pos_] != '"') {
+            if (text_[pos_] == '\\' && pos_ + 1 < text_.size()) ++pos_;  // desescapa el siguiente
+            out.push_back(text_[pos_]);
+            ++pos_;
+        }
+        if (pos_ >= text_.size()) return false;
+        ++pos_;  // comilla de cierre
+        return true;
+    }
+
+    bool ParseBlock(VdfNode& node) {
+        node.block = true;
+        for (;;) {
+            SkipSpace();
+            if (pos_ >= text_.size()) return true;  // fin de archivo
+            if (text_[pos_] == '}') {
+                ++pos_;
+                return true;
+            }
+            std::string key;
+            if (!ReadString(key)) return false;
+            SkipSpace();
+            VdfNode child;
+            if (pos_ < text_.size() && text_[pos_] == '{') {
+                ++pos_;
+                if (!ParseBlock(child)) return false;
+            } else {
+                if (!ReadString(child.scalar)) return false;
+            }
+            node.children.emplace_back(std::move(key), std::move(child));
+        }
+    }
+};
+
+// Base para convertir un accountid (32 bits) en SteamID64.
+constexpr uint64_t kSteamId64Base = 76561197960265728ULL;
+
+std::string AccountIdToSteamId64(const std::string& accountId) {
+    const uint64_t id = std::strtoull(accountId.c_str(), nullptr, 10);
+    if (id == 0) return {};
+    return std::to_string(kSteamId64Base + id);
 }
 
 std::filesystem::path ReadRegString(HKEY root, const wchar_t* subkey, const wchar_t* value) {
@@ -172,6 +289,93 @@ bool DetectRecentSteamAccount(LocalAccount& out, std::string& errorOut) {
     }
     if (!ParseLoginUsersVdf(content, out)) {
         errorOut = "No se encontro ninguna cuenta de Steam en loginusers.vdf.";
+        return false;
+    }
+    return true;
+}
+
+std::filesystem::path SteamLocalConfigPath(const std::filesystem::path& steamDir,
+                                           const std::string& accountId) {
+    return steamDir / L"userdata" / std::filesystem::path(accountId) / L"config" /
+           L"localconfig.vdf";
+}
+
+bool ParseLocalFamilyGroupVdf(const std::string& content, LocalFamilyGroup& out) {
+    out = LocalFamilyGroup{};
+    VdfReader reader(content);
+    VdfNode root;
+    if (!reader.ParseDocument(root)) return false;
+
+    const VdfNode* family = root.FindRecursive("FamilyGroup");
+    if (family == nullptr || !family->block) return false;
+
+    if (const VdfNode* id = family->Find("groupid")) out.groupId = id->scalar;
+    if (const VdfNode* name = family->Find("name")) out.name = name->scalar;
+
+    if (const VdfNode* members = family->Find("members"); members != nullptr && members->block) {
+        for (const auto& entry : members->children) {
+            if (!entry.second.block) continue;
+            const VdfNode* account = entry.second.Find("accountid");
+            if (account == nullptr) continue;
+            const std::string steamid = AccountIdToSteamId64(account->scalar);
+            if (!IsValidSteamId64(steamid)) continue;
+            if (std::find(out.memberSteamIds.begin(), out.memberSteamIds.end(), steamid) ==
+                out.memberSteamIds.end()) {
+                out.memberSteamIds.push_back(steamid);
+            }
+        }
+    }
+
+    // Un grupo valido tiene identificador o al menos un miembro reconocible.
+    return !out.groupId.empty() || !out.memberSteamIds.empty();
+}
+
+bool DetectLocalFamilyGroup(const std::string& ownSteamId64, LocalFamilyGroup& out,
+                            std::string& errorOut) {
+    errorOut.clear();
+    const std::filesystem::path dir = SteamInstallDir();
+    if (dir.empty()) {
+        errorOut = "No se encontro la instalacion de Steam en el registro de Windows.";
+        return false;
+    }
+
+    // Carpeta de la cuenta propia (para preferirla si hay varias cuentas).
+    std::string ownAccountId;
+    if (IsValidSteamId64(ownSteamId64)) {
+        const uint64_t id = std::strtoull(ownSteamId64.c_str(), nullptr, 10);
+        if (id > kSteamId64Base) ownAccountId = std::to_string(id - kSteamId64Base);
+    }
+
+    std::error_code ec;
+    const std::filesystem::path userdata = dir / L"userdata";
+    if (!std::filesystem::is_directory(userdata, ec)) {
+        errorOut =
+            "No se encontro la carpeta userdata de Steam; abre el cliente una vez e intentalo de nuevo.";
+        return false;
+    }
+
+    bool found = false;
+    for (std::filesystem::directory_iterator it(userdata, ec), end; !ec && it != end; it.increment(ec)) {
+        if (!it->is_directory(ec)) continue;
+        const std::filesystem::path path = it->path() / L"config" / L"localconfig.vdf";
+        std::string content;
+        if (!ReadFileBytes(path, content)) continue;
+        LocalFamilyGroup group;
+        if (!ParseLocalFamilyGroupVdf(content, group)) continue;
+
+        const bool isOwn =
+            !ownAccountId.empty() && it->path().filename().string() == ownAccountId;
+        if (!found || isOwn) {
+            out = std::move(group);
+            found = true;
+            if (isOwn) break;
+        }
+    }
+
+    if (!found) {
+        errorOut =
+            "Esta cuenta no pertenece a ningun grupo familiar de Steam, o el cliente aun no lo ha "
+            "descargado. Abre Steam, entra en Familia y vuelve a intentarlo.";
         return false;
     }
     return true;
