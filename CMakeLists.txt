@@ -82,9 +82,13 @@ add_executable(SteamRecentPlay WIN32
     src/ui/gfx.cpp
     src/ui/image_cache.cpp
     src/ui/dialogs.cpp
+    src/ui/darkmode.cpp
     src/ui/worker.cpp
     resources/app.rc
+    resources/app.manifest
 )
+
+target_include_directories(SteamRecentPlay PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
 target_link_libraries(SteamRecentPlay PRIVATE
     srp_core
