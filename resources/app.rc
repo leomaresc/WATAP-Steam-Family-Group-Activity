@@ -78,10 +78,10 @@ END
 
 IDD_IMPORT DIALOGEX 0, 0, 320, 224
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Importar amigos de Steam"
+CAPTION "Importar integrantes de Steam"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
-    LTEXT           "Elige a que amigos de Steam quieres seguir:", -1, 10, 10, 300, 9
+    LTEXT           "Elige a que integrantes de Steam quieres seguir:", -1, 10, 10, 300, 9
     LTEXT           "", IDC_IMPORT_HINT, 10, 21, 300, 9
     LISTBOX         IDC_IMPORT_LIST, 10, 33, 300, 140,
                     LBS_EXTENDEDSEL | LBS_NOINTEGRALHEIGHT | LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP

@@ -40,13 +40,16 @@ struct VanityResult {
     std::string message;
 };
 
-// Resultado de la importacion de amigos (recibido desde el hilo de trabajo).
+// Resultado de la importacion de integrantes (amigos o grupo familiar) desde el
+// hilo de trabajo.
 struct FriendsResult {
     std::vector<Profile> friends;
     bool ok = false;
     std::string message;
     std::string ownSteamId;
     std::string ownPersonaName;
+    std::string sourceLabel;   // "tu grupo familiar" o "tus amigos"
+    std::string groupName;     // nombre del grupo familiar, si lo hay
 };
 
 class MainWindow {
@@ -71,6 +74,7 @@ private:
         AddProfile,
         EditProfile,
         RemoveProfile,
+        ImportFamily,
         ImportFriends,
         TabGames,
         TabOverview,
@@ -135,9 +139,11 @@ private:
     void RebuildCombos();
     void RefreshProfiles(bool all);
     void AddProfileDialog();
-    void ImportFriends();
-    void StartFriendImport(const std::string& ownSteamId);
-    void ApplyImportedFriends(std::vector<Profile> friends);
+    // Importa integrantes: grupo familiar de Steam (principal) o lista de amigos.
+    void ImportMembers(bool family);
+    void EnsureOwnSteamId(bool family);  // detecta/valida el perfil propio y lanza la importacion
+    void StartMemberImport(const std::string& ownSteamId, bool family);
+    void ApplyImportedFriends(std::vector<Profile> friends, const std::string& sourceLabel);
     void EditSelectedProfile();
     void RemoveSelectedProfile();
     void OpenSettings();
@@ -223,6 +229,7 @@ private:
     std::vector<ContentEntry> contentEntries_;
     bool pendingVanity_ = false;
     bool pendingVanityIsOwn_ = false;
+    bool pendingOwnImportFamily_ = true;
     std::string pendingVanityAlias_;
     bool pendingFriends_ = false;
     bool rebuildingCombos_ = false;
@@ -278,7 +285,8 @@ private:
     RECT rcBtnAdd_{};
     RECT rcBtnEdit_{};
     RECT rcBtnRemove_{};
-    RECT rcBtnImport_{};
+    RECT rcBtnImportFamily_{};
+    RECT rcBtnImportFriends_{};
     RECT rcTabGames_{};
     RECT rcTabOverview_{};
     RECT rcHideLow_{};

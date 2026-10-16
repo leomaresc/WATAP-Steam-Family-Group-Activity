@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <string>
@@ -287,7 +288,7 @@ LRESULT MainWindow::WndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
                     if (wasOwn) {
                         config_.ownSteamId64 = result->steamid64;
                         SaveConfigNow();
-                        StartFriendImport(result->steamid64);
+                        StartMemberImport(result->steamid64, pendingOwnImportFamily_);
                     } else {
                         AddProfileById(result->steamid64, alias);
                     }
@@ -317,10 +318,17 @@ LRESULT MainWindow::WndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
                             SaveConfigNow();
                         }
                     }
-                    ApplyImportedFriends(std::move(result->friends));
+                    if (result->friends.empty() && !result->message.empty()) {
+                        // Caso informativo: sin grupo familiar, sin amigos, etc.
+                        statusMessage_ = result->message;
+                        MessageBoxW(hwnd_, Widen(result->message).c_str(), L"Importar", 
+                                    MB_OK | MB_ICONINFORMATION);
+                    } else {
+                        ApplyImportedFriends(std::move(result->friends), result->sourceLabel);
+                    }
                 } else {
                     statusMessage_ = result->message;
-                    MessageBoxW(hwnd_, Widen(result->message).c_str(), L"Importar amigos",
+                    MessageBoxW(hwnd_, Widen(result->message).c_str(), L"Importar",
                                 MB_OK | MB_ICONWARNING);
                 }
                 delete result;
@@ -976,8 +984,11 @@ void MainWindow::HandleHit(const HitRegion& region) {
         case Hit::AddProfile:
             AddProfileDialog();
             break;
+        case Hit::ImportFamily:
+            ImportMembers(true);
+            break;
         case Hit::ImportFriends:
-            ImportFriends();
+            ImportMembers(false);
             break;
         case Hit::EditProfile:
             EditSelectedProfile();
@@ -1118,26 +1129,32 @@ void MainWindow::AddProfileById(const std::string& steamid64, const std::string&
     RefreshProfiles(false);
 }
 
-void MainWindow::ImportFriends() {
+// Punto de entrada de las importaciones. Valida el estado y delega en
+// EnsureOwnSteamId, que resuelve el perfil propio si hace falta.
+void MainWindow::ImportMembers(bool family) {
+    const wchar_t* title = family ? L"Importar familia" : L"Importar amigos";
     if (demoMode_) {
         MessageBoxW(hwnd_,
                     L"Estas en modo de demostracion con datos ficticios.\n"
-                    L"Sal del modo demo para importar amistades reales.",
-                    L"Importar amigos", MB_OK | MB_ICONINFORMATION);
+                    L"Sal del modo demo para importar integrantes reales.",
+                    title, MB_OK | MB_ICONINFORMATION);
         return;
     }
     if (!hasApiKey_) {
         MessageBoxW(hwnd_,
-                    L"Necesitas una clave de Steam Web API para importar amigos.\n"
+                    L"Necesitas una clave de Steam Web API para importar integrantes.\n"
                     L"Anadela con el boton Clave API.",
-                    L"Importar amigos", MB_OK | MB_ICONWARNING);
+                    title, MB_OK | MB_ICONWARNING);
         return;
     }
     if (pendingFriends_ || pendingVanity_) return;
+    EnsureOwnSteamId(family);
+}
 
+void MainWindow::EnsureOwnSteamId(bool family) {
     // 1) Perfil propio ya conocido.
     if (IsValidSteamId64(config_.ownSteamId64)) {
-        StartFriendImport(config_.ownSteamId64);
+        StartMemberImport(config_.ownSteamId64, family);
         return;
     }
 
@@ -1150,7 +1167,7 @@ void MainWindow::ImportFriends() {
         SaveConfigNow();
         statusMessage_ = "Cuenta de Steam detectada: " +
                          (account.personaName.empty() ? account.steamid64 : account.personaName);
-        StartFriendImport(account.steamid64);
+        StartMemberImport(account.steamid64, family);
         return;
     }
 
@@ -1162,12 +1179,13 @@ void MainWindow::ImportFriends() {
     if (kind == ProfileInputKind::SteamId64) {
         config_.ownSteamId64 = value;
         SaveConfigNow();
-        StartFriendImport(value);
+        StartMemberImport(value, family);
         return;
     }
     if (kind == ProfileInputKind::Vanity) {
         pendingVanity_ = true;
         pendingVanityIsOwn_ = true;
+        pendingOwnImportFamily_ = family;
         statusMessage_ = "Resolviendo tu perfil de Steam...";
         const std::string vanity = value;
         const std::string key = apiKey_;
@@ -1195,21 +1213,42 @@ void MainWindow::ImportFriends() {
     MessageBoxW(hwnd_,
                 L"No se pudo detectar tu cuenta de Steam y el valor introducido no es valido.\n"
                 L"Indica tu SteamID64 o la URL de tu perfil.",
-                L"Importar amigos", MB_OK | MB_ICONWARNING);
+                L"Importar", MB_OK | MB_ICONWARNING);
 }
 
-void MainWindow::StartFriendImport(const std::string& ownSteamId) {
+void MainWindow::StartMemberImport(const std::string& ownSteamId, bool family) {
     if (pendingFriends_) return;
     pendingFriends_ = true;
-    statusMessage_ = "Buscando tus amigos en Steam...";
+    statusMessage_ = family ? "Buscando tu grupo familiar en Steam..."
+                            : "Buscando tus amigos en Steam...";
     InvalidateRect(hwnd_, nullptr, FALSE);
 
     const std::string key = apiKey_;
     auto alive = alive_;
-    worker_.Post([this, ownSteamId, key, alive]() {
+    worker_.Post([this, ownSteamId, key, alive, family]() {
         HttpClient http;
-        std::vector<Profile> friends;
-        const steam::FetchOutcome outcome = steam::FetchFriendProfiles(http, key, ownSteamId, friends);
+        std::vector<Profile> members;
+        std::string groupName;
+        steam::FetchOutcome outcome;
+        if (family) {
+            // El grupo familiar se lee del cliente local; luego se piden los
+            // nombres y avatares a la Web API.
+            steam::LocalFamilyGroup group;
+            std::string error;
+            if (!steam::DetectLocalFamilyGroup(ownSteamId, group, error)) {
+                outcome.status = FetchStatus::Ok;  // caso informativo, no un fallo
+                outcome.message = error;
+            } else {
+                groupName = group.name;
+                outcome = steam::FetchProfilesByIds(http, key, group.memberSteamIds, members);
+                if (outcome.status == FetchStatus::Ok) {
+                    outcome.message = "Miembros del grupo familiar: " +
+                                      std::to_string(members.size()) + ".";
+                }
+            }
+        } else {
+            outcome = steam::FetchFriendProfiles(http, key, ownSteamId, members);
+        }
 
         std::string ownName;
         if (outcome.status == FetchStatus::Ok) {
@@ -1228,9 +1267,16 @@ void MainWindow::StartFriendImport(const std::string& ownSteamId) {
         auto* result = new FriendsResult();
         result->ok = outcome.status == FetchStatus::Ok;
         result->message = outcome.message;
-        result->friends = std::move(friends);
+        result->friends = std::move(members);
         result->ownSteamId = ownSteamId;
         result->ownPersonaName = ownName;
+        result->groupName = groupName;
+        if (family) {
+            result->sourceLabel =
+                groupName.empty() ? "tu grupo familiar" : "tu grupo familiar \"" + groupName + "\"";
+        } else {
+            result->sourceLabel = "tus amigos";
+        }
         if (alive->load()) {
             if (PostMessageW(hwnd_, WM_SRP_FRIENDS, 0, reinterpret_cast<LPARAM>(result)) == FALSE) {
                 delete result;
@@ -1241,7 +1287,8 @@ void MainWindow::StartFriendImport(const std::string& ownSteamId) {
     });
 }
 
-void MainWindow::ApplyImportedFriends(std::vector<Profile> friends) {
+void MainWindow::ApplyImportedFriends(std::vector<Profile> friends,
+                                      const std::string& sourceLabel) {
     // Descarta el propio perfil y los ya seguidos.
     friends.erase(std::remove_if(friends.begin(), friends.end(),
                                  [&](const Profile& profile) {
@@ -1251,18 +1298,16 @@ void MainWindow::ApplyImportedFriends(std::vector<Profile> friends) {
                   friends.end());
 
     if (friends.empty()) {
-        statusMessage_ = "No hay amigos nuevos que anadir.";
+        statusMessage_ = "No hay integrantes nuevos que anadir.";
         MessageBoxW(hwnd_,
-                    L"No se encontraron amigos nuevos que anadir (o ya los sigues a todos).",
-                    L"Importar amigos", MB_OK | MB_ICONINFORMATION);
+                    L"No se encontraron integrantes nuevos que anadir (o ya los sigues a todos).",
+                    L"Importar", MB_OK | MB_ICONINFORMATION);
         InvalidateRect(hwnd_, nullptr, FALSE);
         return;
     }
 
-    const std::string ownName =
-        config_.ownPersonaName.empty() ? "tu cuenta de Steam" : config_.ownPersonaName;
-    const std::string intro = "Amigos de " + ownName + ": " + std::to_string(friends.size()) +
-                              " disponibles para importar.";
+    const std::string intro = "Encontrados en " + sourceLabel + ": " +
+                              std::to_string(friends.size()) + ". Elige a quienes seguir.";
     const std::vector<Profile> selected = ShowImportDialog(hwnd_, intro, friends);
     if (selected.empty()) {
         statusMessage_ = "Importacion cancelada.";
@@ -1420,9 +1465,9 @@ void MainWindow::OpenApiKeyDialog() {
     ComputeLayout();
     InvalidateRect(hwnd_, nullptr, FALSE);
 
-    // Primera vez: importa los amigos automaticamente. Si ya hay integrantes, refresca.
+    // Primera vez: importa el grupo familiar automaticamente. Si ya hay integrantes, refresca.
     if (config_.profiles.empty()) {
-        ImportFriends();
+        ImportMembers(true);
     } else {
         RefreshProfiles(true);
     }
@@ -1460,7 +1505,11 @@ void MainWindow::ComputeLayout() {
     rcBtnRemove_ = {rcBtnEdit_.right + gap, buttonY, rcBtnEdit_.right + gap + buttonWidth, buttonY + btnH};
 
     const int importY = buttonY - gap - btnH;
-    rcBtnImport_ = {rcSidebar_.left + pad, importY, rcSidebar_.right - pad, importY + btnH};
+    const int importWidth = (rcSidebar_.right - rcSidebar_.left - pad * 2 - gap) / 2;
+    rcBtnImportFamily_ = {rcSidebar_.left + pad, importY, rcSidebar_.left + pad + importWidth,
+                          importY + btnH};
+    rcBtnImportFriends_ = {rcBtnImportFamily_.right + gap, importY, rcSidebar_.right - pad,
+                           importY + btnH};
 
     rcSidebarList_ = {rcSidebar_.left, rcSidebar_.top + titleH, rcSidebar_.right,
                       importY - gap};
@@ -1852,9 +1901,15 @@ void MainWindow::DrawSidebar(Gdiplus::Graphics& g) {
 
     {
         const bool enabled = !demoMode_ && hasApiKey_ && !pendingFriends_;
-        const int i = enabled ? AddHit(Hit::ImportFriends, rcBtnImport_) : -1;
-        const std::string label = pendingFriends_ ? "Buscando amigos..." : "Importar de Steam";
-        DrawButton(g, rcBtnImport_, label, 1, i == hoverIndex_, i == pressedIndex_, enabled);
+        const int i = enabled ? AddHit(Hit::ImportFamily, rcBtnImportFamily_) : -1;
+        const std::string label = pendingFriends_ ? "Buscando..." : "Importar familia";
+        DrawButton(g, rcBtnImportFamily_, label, 1, i == hoverIndex_, i == pressedIndex_, enabled);
+    }
+    {
+        const bool enabled = !demoMode_ && hasApiKey_ && !pendingFriends_;
+        const int i = enabled ? AddHit(Hit::ImportFriends, rcBtnImportFriends_) : -1;
+        DrawButton(g, rcBtnImportFriends_, "Importar amigos", 0, i == hoverIndex_,
+                   i == pressedIndex_, enabled);
     }
     {
         const int i = AddHit(Hit::AddProfile, rcBtnAdd_);
@@ -1905,7 +1960,7 @@ void MainWindow::DrawContent(Gdiplus::Graphics& g) {
         } else if (displayProfiles_.empty()) {
             title = "Todavia no hay integrantes";
             subtitle =
-                "Pulsa \"Importar de Steam\" para traer a tus amigos, o \"Anadir\" para un perfil.";
+                "Pulsa \"Importar familia\" para traer a tu grupo familiar, o \"Anadir\" para un perfil.";
         } else if (!hasApiKey_) {
             title = "Falta la clave de API";
             subtitle = "Pulsa \"Clave API\" para introducir tu clave de Steam Web API.";
