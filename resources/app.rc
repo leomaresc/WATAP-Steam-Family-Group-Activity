@@ -1,1 +1,77 @@
-﻿1 RT_MANIFEST "app.manifest"
+﻿#include <windows.h>
+#include "resource.h"
+
+IDI_APPICON ICON "app.ico"
+
+IDD_PROFILE DIALOGEX 0, 0, 268, 116
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Integrante"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "SteamID64 o URL de perfil:", -1, 10, 10, 248, 9
+    EDITTEXT        IDC_PROFILE_INPUT, 10, 21, 248, 14, ES_AUTOHSCROLL
+    LTEXT           "Nombre local (opcional):", -1, 10, 41, 248, 9
+    EDITTEXT        IDC_PROFILE_ALIAS, 10, 52, 248, 14, ES_AUTOHSCROLL
+    LTEXT           "Se aceptan SteamID64 (7656119...), URLs con /profiles/ o /id/ y nombres de perfil.",
+                    IDC_PROFILE_HINT, 10, 71, 248, 9
+    LTEXT           "", IDC_PROFILE_STATUS, 10, 82, 248, 9
+    DEFPUSHBUTTON   "Aceptar", IDOK, 146, 96, 54, 14, BS_OWNERDRAW
+    PUSHBUTTON      "Cancelar", IDCANCEL, 204, 96, 54, 14, BS_OWNERDRAW
+END
+
+IDD_APIKEY DIALOGEX 0, 0, 300, 132
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Clave de Steam Web API"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "Clave propia de Steam Web API:", -1, 10, 10, 280, 9
+    EDITTEXT        IDC_KEY_EDIT, 10, 21, 280, 14, ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "La clave se guarda en el Administrador de credenciales de Windows.",
+                    IDC_KEY_LINK, 10, 40, 280, 9, SS_NOTIFY
+    LTEXT           "", IDC_KEY_STATUS, 10, 54, 280, 20
+    PUSHBUTTON      "Guardar", IDC_KEY_SAVE, 10, 84, 60, 15, BS_OWNERDRAW
+    PUSHBUTTON      "Probar", IDC_KEY_TEST, 74, 84, 60, 15, BS_OWNERDRAW
+    PUSHBUTTON      "Eliminar", IDC_KEY_DELETE, 138, 84, 60, 15, BS_OWNERDRAW
+    DEFPUSHBUTTON   "Cerrar", IDOK, 236, 84, 54, 15, BS_OWNERDRAW
+    LTEXT           "Obtenga una clave en steamcommunity.com/dev/apikey (requiere iniciar sesion en Steam).",
+                    -1, 10, 108, 280, 16
+END
+
+IDD_SETTINGS DIALOGEX 0, 0, 268, 176
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Ajustes"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    CHECKBOX        "Actualizacion automatica mientras la aplicacion esta abierta",
+                    IDC_PREF_AUTOREFRESH, 10, 10, 248, 10
+    LTEXT           "Intervalo (minutos):", -1, 20, 25, 60, 9
+    EDITTEXT        IDC_PREF_AUTOREFRESH_MIN, 84, 23, 34, 13, ES_NUMBER | ES_AUTOHSCROLL
+    CHECKBOX        "Mostrar portadas de los juegos", IDC_PREF_SHOW_COVERS, 10, 42, 248, 10
+    LTEXT           "Umbrales de actividad reciente (minutos en las ultimas dos semanas):",
+                    IDC_PREF_LABEL_INT, 10, 59, 248, 9
+    LTEXT           "Actividad moderada a partir de:", -1, 20, 74, 100, 9
+    EDITTEXT        IDC_PREF_MOD_MIN, 124, 72, 34, 13, ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "Actividad alta a partir de:", -1, 20, 90, 100, 9
+    EDITTEXT        IDC_PREF_HIGH_MIN, 124, 88, 34, 13, ES_NUMBER | ES_AUTOHSCROLL
+    CHECKBOX        "Ocultar juegos por debajo de este umbral de minutos recientes:",
+                    IDC_PREF_HIDE_LOW, 10, 108, 200, 10
+    EDITTEXT        IDC_PREF_LOW_MIN, 214, 106, 34, 13, ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "Baja: menos de moderada. Moderada y Alta se calculan con los valores anteriores.",
+                    -1, 10, 124, 248, 16
+    PUSHBUTTON      "Borrar cache local", IDC_PREF_CLEAR_CACHE, 10, 148, 80, 15, BS_OWNERDRAW
+    DEFPUSHBUTTON   "Guardar", IDOK, 146, 148, 54, 15, BS_OWNERDRAW
+    PUSHBUTTON      "Cancelar", IDCANCEL, 204, 148, 54, 15, BS_OWNERDRAW
+END
+
+IDD_ABOUT DIALOGEX 0, 0, 300, 150
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Acerca de Steam Recent Play"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "Steam Recent Play", -1, 12, 12, 276, 12
+    LTEXT           "Visor ultraligero de actividad reciente de una familia de Steam.",
+                    -1, 12, 28, 276, 9
+    LTEXT           "Usa las interfaces publicas IPlayerService/GetRecentlyPlayedGames, ISteamUser/GetPlayerSummaries y ISteamUser/ResolveVanityURL. No accede a datos privados ni muestra el estado en tiempo real.",
+                    IDC_ABOUT_TEXT, 12, 44, 276, 60
+    DEFPUSHBUTTON   "Cerrar", IDOK, 234, 122, 54, 15, BS_OWNERDRAW
+END

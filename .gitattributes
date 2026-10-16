@@ -1,0 +1,15 @@
+# Normaliza finales de linea y marca los binarios como tales
+* text=auto
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
+*.ps1 text eol=crlf
+*.rc text eol=crlf
+*.manifest text eol=crlf
+*.ico binary
+*.png binary
+*.jpg binary
+*.exe binary
+*.lib binary
