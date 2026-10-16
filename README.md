@@ -15,10 +15,10 @@ ejecutarse: es un unico `.exe` que enlaza estaticamente el runtime de Visual C++
 
 - **Integrantes (A):** lista lateral con avatar, nombre publico, numero de juegos recientes y
   fecha de la ultima consulta. Permite anadir, editar y quitar integrantes.
-- **Importacion automatica de tus amistades:** con la clave de API configurada, el boton
-  **Importar de Steam** detecta solo tu cuenta de Steam en el equipo, lee tu lista de amigos y
-  te muestra una lista para marcar a quien seguir. No hay que escribir el SteamID de cada
-  persona.
+- **Importacion automatica de integrantes:** con la clave de API configurada, los botones
+  **Importar familia** e **Importar amigos** detectan solo tu cuenta de Steam en el equipo y
+  traen los miembros de tu **grupo familiar de Steam** o de tu **lista de amigos**, con una
+  lista para marcar a quien seguir. No hay que escribir el SteamID de cada persona.
 - **Juegos recientes (B):** tarjetas compactas por juego con portada, nombre, tiempo de las
   ultimas dos semanas destacado y tiempo total acumulado. Boton para abrir la ficha en Steam.
 - **Vista general (C):** agrega y elimina duplicados de todos los integrantes, mostrando los
@@ -115,30 +115,45 @@ nombre de destino `SteamRecentPlay/SteamWebApiKey`. **Nunca** se escribe en `con
 codigo fuente, en los registros ni se pasa por la linea de comandos. Puedes borrarla con el
 boton **Eliminar** de ese mismo dialogo, o desde el Administrador de credenciales.
 
-Justo despues de guardar la clave por primera vez, la app intenta **importar tus amigos
+Justo despues de guardar la clave por primera vez, la app intenta **importar tu grupo familiar
 automaticamente** (ver el punto 2).
 
 ### 2. Integrantes (importacion automatica)
 
-No hace falta escribir cada SteamID a mano:
+No hace falta escribir cada SteamID a mano. Hay dos botones en la barra lateral:
 
-1. Pulsa **Importar de Steam** en la barra lateral.
+- **Importar familia** (principal): trae a los miembros de tu **grupo familiar de Steam**
+  (Steam Families).
+- **Importar amigos**: trae a tu **lista de amigos** de Steam.
+
+En ambos casos:
+
+1. Pulsa el boton correspondiente.
 2. La app detecta **tu** cuenta de Steam leyendo la cuenta reciente del cliente de Steam
    instalado (`loginusers.vdf`). Si no puede, te pedira tu perfil una sola vez.
-3. Descarga tu **lista de amigos** (nombre y avatar) y muestra una lista para marcar a quien
-   quieres seguir. Usa **Ctrl/Mayus** para seleccionar varios, o los botones **Seleccionar
-   todos** / **Ninguno**.
+3. Obtiene los integrantes (nombre y avatar) y muestra una lista para marcar a quien quieres
+   seguir. Usa **Ctrl/Mayus** para seleccionar varios, o los botones **Seleccionar todos** /
+   **Ninguno**.
 4. Pulsa **Anadir seleccionados**.
 
-Si vuelves a pulsar **Importar de Steam** mas adelante, solo apareceran los amigos que aun no
-sigues.
+Si vuelves a pulsarlo mas adelante, solo apareceran los integrantes que aun no sigues.
+
+#### De donde sale cada lista
+
+- **Amigos:** de `ISteamUser/GetFriendList/v1` (requiere que tu lista de amigos sea **publica**
+  en Steam; si es privada, Steam devuelve un error y la app te lo indica), y los nombres y
+  avatares de `ISteamUser/GetPlayerSummaries/v2`.
+- **Grupo familiar:** de tu propio cliente de Steam. El servicio `IFamilyGroupsService` de la
+  Web API **no acepta una clave de API normal** (necesita un token de sesion de la web de
+  Steam), asi que en su lugar la app lee la copia que Steam guarda en
+  `Steam/userdata/<tu cuenta>/config/localconfig.vdf` (bloque `FamilyGroup`) y luego pide los
+  nombres y avatares con `GetPlayerSummaries`. Es la misma fuente que usa el propio cliente; no
+  hay scraping ni cookies, solo lectura de un archivo local. Si esa cuenta no pertenece a
+  ningun grupo familiar, la app te lo indica.
 
 > La clave de API de Steam **no** identifica por si sola a que cuenta pertenece, y no existe un
 > endpoint publico documentado que lo haga. Por eso la app deduce tu cuenta del cliente local
 > (o te la pide una vez) y la recuerda en tu `config.json`.
-
-La lista de amigos debe estar **publica** en Steam; si es privada, Steam devuelve un error y la
-app te lo indica.
 
 #### Alta manual (opcional)
 
@@ -197,6 +212,9 @@ hilo de la interfaz, con tiempos de espera, para que la ventana nunca se bloquee
   sobre HTTPS (WinHTTP).
 - La deteccion de tu propia cuenta lee unicamente `loginusers.vdf` del cliente de Steam
   instalado (un archivo local de Steam); no es scraping ni accede a la web de Steam.
+- El **grupo familiar** se lee de `userdata/<cuenta>/config/localconfig.vdf` del cliente de
+  Steam (bloque `FamilyGroup`), tambien un archivo local. El servicio `IFamilyGroupsService` de
+  la Web API **no** se usa: exige un token de sesion de la web de Steam, no una clave de API.
 - Las peticiones se hacen de forma espaciada y con cache, para ser respetuoso con los limites de
   uso (HTTP 429 se detecta y se muestra como "demasiadas solicitudes").
 - No se accede a datos privados ni a cookies.
@@ -205,7 +223,7 @@ hilo de la interfaz, con tiempos de espera, para que la ventana nunca se bloquee
 
 ## Pruebas
 
-`srp_tests` ejecuta **108 comprobaciones** sobre la logica no visual (`srp_core`), incluyendo:
+`srp_tests` ejecuta **118 comprobaciones** sobre la logica no visual (`srp_core`), incluyendo:
 
 - formateo de minutos y clasificacion de actividad reciente;
 - identificacion, validacion y resolucion de perfiles;
@@ -214,6 +232,7 @@ hilo de la interfaz, con tiempos de espera, para que la ventana nunca se bloquee
 - analisis de `GetFriendList` (incluida la deteccion de lista privada);
 - lectura de `loginusers.vdf` del cliente de Steam (incluido el formato real con claves en
   minusculas);
+- lectura del bloque `FamilyGroup` de `localconfig.vdf` y conversion de `accountid` a SteamID64;
 - perfiles privados o sin actividad;
 - ordenacion por actividad reciente;
 - cache de actividad y su refresco;
@@ -237,8 +256,11 @@ instalado):
 
 - `GetRecentlyPlayedGames` y `GetPlayerSummaries` devuelven actividad, nombres y avatares
   reales para varios integrantes.
-- La **importacion automatica** funciona de extremo a extremo: detecta la cuenta local, lee
-  `GetFriendList` y carga los nombres de los amigos con `GetPlayerSummaries`.
+- La **importacion automatica** funciona de extremo a extremo:
+  - **Familia:** detecta la cuenta local, lee el grupo familiar de `localconfig.vdf` y carga los
+    nombres de sus miembros con `GetPlayerSummaries` (probado con un grupo familiar real de 5
+    miembros).
+  - **Amigos:** lee `GetFriendList` y carga los nombres de los amigos con `GetPlayerSummaries`.
 - Carga de portadas desde el CDN de Steam.
 
 No verificado / limitaciones:
@@ -248,17 +270,20 @@ No verificado / limitaciones:
   pruebas se cubren con datos de ejemplo.
 - La deteccion de tu propia cuenta depende del cliente de Steam instalado; si falta, la app te
   pide tu perfil una sola vez.
+- El **grupo familiar** depende de que Steam este instalado y haya descargado la copia local
+  (`userdata/<cuenta>/config/localconfig.vdf`); si el cliente nunca ha abierto la seccion
+  Familia, el bloque puede no existir todavia y la app lo indica.
 - El modo demostracion usa **datos ficticios**; no representa a ninguna persona real.
 - No representa ningun tipo de "disponibilidad de copias" ni estado en tiempo real.
 
 Verificado en el entorno de desarrollo:
 
 - Compilacion limpia en Release, sin avisos en el codigo del proyecto.
-- `SteamRecentPlay.exe` (~556 KiB) y `srp_tests.exe`.
+- `SteamRecentPlay.exe` (~568 KiB) y `srp_tests.exe`.
 - Arranque de la aplicacion y estabilidad de la ventana principal.
 - Interfaz completa revisada por capturas: vistas "Juegos recientes"/"Vista general"/integrante y
-  los dialogos de Integrante, Ajustes, Clave API, Importar amigos y Acerca de.
-- Las 108 comprobaciones de `srp_tests` pasan.
+  los dialogos de Integrante, Ajustes, Clave API, Importar integrantes y Acerca de.
+- Las 118 comprobaciones de `srp_tests` pasan.
 
 ---
 
@@ -270,7 +295,7 @@ build.ps1               compilacion/pruebas por linea de comandos
 resources\              manifiesto, icono, plantillas de dialogo (.rc) y resource.h
 src\main.cpp            punto de entrada (wWinMain, GDI+, bucle de mensajes)
 src\ui\                 interfaz: ventana, temas, dibujo, dialogos, hilo de trabajo, cache de imagenes
-src\steam\              cliente HTTP (WinHTTP), API de Steam, deteccion de la cuenta local y datos demo
+src\steam\              cliente HTTP (WinHTTP), API de Steam, deteccion local (cuenta y grupo familiar) y datos demo
 src\storage\            configuracion en JSON, cache en disco y credenciales (Credential Manager)
 src\common\             modelos compartidos, formateo y rutas/utilidades
 tests\test_main.cpp     pruebas de consola de la logica no visual
