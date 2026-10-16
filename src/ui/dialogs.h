@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <string>
+#include <vector>
 
 #include "common/models.h"
 #include "ui/worker.h"
@@ -30,5 +31,10 @@ bool ShowSettingsDialog(HWND parent, Preferences& prefs, bool& clearCacheRequest
 void ShowApiKeyDialog(HWND parent, Worker& worker, bool& keyChanged);
 
 void ShowAboutDialog(HWND parent);
+
+// Permite elegir que amigos importar. `intro` describe el origen (p. ej. el nombre
+// de la cuenta). Devuelve los perfiles seleccionados (vacio si se cancela).
+std::vector<Profile> ShowImportDialog(HWND parent, const std::string& intro,
+                                      const std::vector<Profile>& candidates);
 
 }  // namespace srp::ui

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <memory>
 
 #include "common/format.h"
@@ -541,6 +542,136 @@ INT_PTR CALLBACK AboutDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return FALSE;
 }
 
+// ---------------------------------------------------------------------------
+// Dialogo de importacion de amigos
+// ---------------------------------------------------------------------------
+
+struct ImportCtx {
+    std::vector<Profile> candidates;
+    std::vector<Profile> result;
+    std::string intro;
+    COLORREF statusColor = kColTextDim;
+};
+
+std::string LowerAscii(std::string value) {
+    for (char& c : value) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return value;
+}
+
+void UpdateImportCount(HWND hwnd, ImportCtx* ctx) {
+    HWND list = GetDlgItem(hwnd, IDC_IMPORT_LIST);
+    const LRESULT count = SendMessageW(list, LB_GETSELCOUNT, 0, 0);
+    const int selected = count > 0 ? static_cast<int>(count) : 0;
+    const std::string text = "Seleccionados: " + std::to_string(selected) + " de " +
+                             std::to_string(ctx->candidates.size()) + ".";
+    ctx->statusColor = selected > 0 ? kColText : kColTextDim;
+    SetText(hwnd, IDC_IMPORT_COUNT, text);
+    InvalidateRect(GetDlgItem(hwnd, IDC_IMPORT_COUNT), nullptr, TRUE);
+}
+
+INT_PTR CALLBACK ImportDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    auto* ctx = reinterpret_cast<ImportCtx*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    switch (msg) {
+        case WM_INITDIALOG: {
+            ctx = reinterpret_cast<ImportCtx*>(lParam);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(ctx));
+            ApplyDarkModeToWindow(hwnd);
+
+            HWND list = GetDlgItem(hwnd, IDC_IMPORT_LIST);
+            std::vector<size_t> order(ctx->candidates.size());
+            for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+            std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+                const Profile& pa = ctx->candidates[a];
+                const Profile& pb = ctx->candidates[b];
+                const std::string na = pa.personaName.empty()
+                                           ? std::string(1, '\x7F') + pa.steamid64
+                                           : LowerAscii(pa.personaName);
+                const std::string nb = pb.personaName.empty()
+                                           ? std::string(1, '\x7F') + pb.steamid64
+                                           : LowerAscii(pb.personaName);
+                return na < nb;
+            });
+            for (size_t index : order) {
+                std::wstring label = Widen(ctx->candidates[index].personaName.empty()
+                                               ? ctx->candidates[index].steamid64
+                                               : ctx->candidates[index].personaName);
+                const LRESULT pos =
+                    SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+                if (pos >= 0) {
+                    SendMessageW(list, LB_SETITEMDATA, static_cast<WPARAM>(pos),
+                                 static_cast<LPARAM>(index));
+                }
+            }
+
+            SetText(hwnd, IDC_IMPORT_HINT, ctx->intro);
+            UpdateImportCount(hwnd, ctx);
+            SendMessageW(hwnd, DM_SETDEFID, IDOK, 0);
+            return TRUE;
+        }
+        case WM_COMMAND: {
+            const int id = LOWORD(wParam);
+            HWND list = GetDlgItem(hwnd, IDC_IMPORT_LIST);
+            if (id == IDC_IMPORT_ALL) {
+                SendMessageW(list, LB_SETSEL, TRUE, static_cast<LPARAM>(-1));
+                UpdateImportCount(hwnd, ctx);
+                return TRUE;
+            }
+            if (id == IDC_IMPORT_NONE) {
+                SendMessageW(list, LB_SETSEL, FALSE, static_cast<LPARAM>(-1));
+                UpdateImportCount(hwnd, ctx);
+                return TRUE;
+            }
+            if (id == IDC_IMPORT_LIST && HIWORD(wParam) == LBN_SELCHANGE) {
+                UpdateImportCount(hwnd, ctx);
+                return TRUE;
+            }
+            if (id == IDOK) {
+                const LRESULT count = SendMessageW(list, LB_GETSELCOUNT, 0, 0);
+                if (count <= 0) {
+                    ctx->statusColor = kColWarn;
+                    SetText(hwnd, IDC_IMPORT_COUNT, "Selecciona al menos un integrante.");
+                    InvalidateRect(GetDlgItem(hwnd, IDC_IMPORT_COUNT), nullptr, TRUE);
+                    return TRUE;
+                }
+                std::vector<int> indices(static_cast<size_t>(count), 0);
+                const LRESULT got = SendMessageW(
+                    list, LB_GETSELITEMS, static_cast<WPARAM>(count),
+                    reinterpret_cast<LPARAM>(indices.data()));
+                for (LRESULT k = 0; k < got; ++k) {
+                    const LRESULT data = SendMessageW(
+                        list, LB_GETITEMDATA, static_cast<WPARAM>(indices[static_cast<size_t>(k)]), 0);
+                    if (data >= 0 && static_cast<size_t>(data) < ctx->candidates.size()) {
+                        ctx->result.push_back(ctx->candidates[static_cast<size_t>(data)]);
+                    }
+                }
+                EndDialog(hwnd, IDOK);
+                return TRUE;
+            }
+            if (id == IDCANCEL) {
+                EndDialog(hwnd, IDCANCEL);
+                return TRUE;
+            }
+            break;
+        }
+        case WM_DRAWITEM:
+            DrawOwnerButton(reinterpret_cast<LPDRAWITEMSTRUCT>(lParam));
+            return TRUE;
+        case WM_CTLCOLORDLG:
+        case WM_CTLCOLORSTATIC:
+        case WM_CTLCOLOREDIT:
+        case WM_CTLCOLORLISTBOX:
+        case WM_CTLCOLORBTN:
+            return DarkCtlColor(msg, wParam, lParam, IDC_IMPORT_COUNT,
+                                ctx != nullptr ? ctx->statusColor : kColTextDim);
+        case WM_CLOSE:
+            EndDialog(hwnd, IDCANCEL);
+            return TRUE;
+        default:
+            break;
+    }
+    return FALSE;
+}
+
 }  // namespace
 
 ProfileDialogResult ShowProfileDialog(HWND parent, const std::string& input,
@@ -573,6 +704,16 @@ void ShowApiKeyDialog(HWND parent, Worker& worker, bool& keyChanged) {
 
 void ShowAboutDialog(HWND parent) {
     DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_ABOUT), parent, AboutDlgProc, 0);
+}
+
+std::vector<Profile> ShowImportDialog(HWND parent, const std::string& intro,
+                                      const std::vector<Profile>& candidates) {
+    ImportCtx ctx;
+    ctx.candidates = candidates;
+    ctx.intro = intro;
+    DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_IMPORT), parent, ImportDlgProc,
+                    reinterpret_cast<LPARAM>(&ctx));
+    return ctx.result;
 }
 
 }  // namespace srp::ui

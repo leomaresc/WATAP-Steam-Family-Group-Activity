@@ -24,6 +24,7 @@
 #include "resource.h"
 #include "steam/demo_data.h"
 #include "steam/http.h"
+#include "steam/local_steam.h"
 #include "steam/steam_api.h"
 #include "storage/cache.h"
 #include "storage/config.h"
@@ -277,14 +278,49 @@ LRESULT MainWindow::WndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_SRP_VANITY: {
             auto* result = reinterpret_cast<VanityResult*>(lParam);
             pendingVanity_ = false;
+            const bool wasOwn = pendingVanityIsOwn_;
+            pendingVanityIsOwn_ = false;
             if (result != nullptr) {
                 if (result->ok && IsValidSteamId64(result->steamid64)) {
                     const std::string alias = pendingVanityAlias_;
                     pendingVanityAlias_.clear();
-                    AddProfileById(result->steamid64, alias);
+                    if (wasOwn) {
+                        config_.ownSteamId64 = result->steamid64;
+                        SaveConfigNow();
+                        StartFriendImport(result->steamid64);
+                    } else {
+                        AddProfileById(result->steamid64, alias);
+                    }
                 } else {
                     statusMessage_ = result->message;
                     MessageBoxW(hwnd_, Widen(result->message).c_str(), L"Integrante",
+                                MB_OK | MB_ICONWARNING);
+                }
+                delete result;
+            }
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return 0;
+        }
+        case WM_SRP_FRIENDS: {
+            auto* result = reinterpret_cast<FriendsResult*>(lParam);
+            pendingFriends_ = false;
+            if (result != nullptr) {
+                if (result->ok) {
+                    if (IsValidSteamId64(result->ownSteamId)) {
+                        if (config_.ownSteamId64 != result->ownSteamId) {
+                            config_.ownSteamId64 = result->ownSteamId;
+                            SaveConfigNow();
+                        }
+                        if (!result->ownPersonaName.empty() &&
+                            config_.ownPersonaName != result->ownPersonaName) {
+                            config_.ownPersonaName = result->ownPersonaName;
+                            SaveConfigNow();
+                        }
+                    }
+                    ApplyImportedFriends(std::move(result->friends));
+                } else {
+                    statusMessage_ = result->message;
+                    MessageBoxW(hwnd_, Widen(result->message).c_str(), L"Importar amigos",
                                 MB_OK | MB_ICONWARNING);
                 }
                 delete result;
@@ -940,6 +976,9 @@ void MainWindow::HandleHit(const HitRegion& region) {
         case Hit::AddProfile:
             AddProfileDialog();
             break;
+        case Hit::ImportFriends:
+            ImportFriends();
+            break;
         case Hit::EditProfile:
             EditSelectedProfile();
             break;
@@ -1079,6 +1118,179 @@ void MainWindow::AddProfileById(const std::string& steamid64, const std::string&
     RefreshProfiles(false);
 }
 
+void MainWindow::ImportFriends() {
+    if (demoMode_) {
+        MessageBoxW(hwnd_,
+                    L"Estas en modo de demostracion con datos ficticios.\n"
+                    L"Sal del modo demo para importar amistades reales.",
+                    L"Importar amigos", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (!hasApiKey_) {
+        MessageBoxW(hwnd_,
+                    L"Necesitas una clave de Steam Web API para importar amigos.\n"
+                    L"Anadela con el boton Clave API.",
+                    L"Importar amigos", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    if (pendingFriends_ || pendingVanity_) return;
+
+    // 1) Perfil propio ya conocido.
+    if (IsValidSteamId64(config_.ownSteamId64)) {
+        StartFriendImport(config_.ownSteamId64);
+        return;
+    }
+
+    // 2) Deteccion automatica desde el cliente de Steam instalado.
+    steam::LocalAccount account;
+    std::string error;
+    if (steam::DetectRecentSteamAccount(account, error) && IsValidSteamId64(account.steamid64)) {
+        config_.ownSteamId64 = account.steamid64;
+        if (!account.personaName.empty()) config_.ownPersonaName = account.personaName;
+        SaveConfigNow();
+        statusMessage_ = "Cuenta de Steam detectada: " +
+                         (account.personaName.empty() ? account.steamid64 : account.personaName);
+        StartFriendImport(account.steamid64);
+        return;
+    }
+
+    // 3) Respaldo: pedir el perfil propio una sola vez.
+    const ProfileDialogResult result = ShowProfileDialog(hwnd_, "", "");
+    if (!result.accepted) return;
+    std::string value;
+    const ProfileInputKind kind = ParseProfileInput(result.input, value);
+    if (kind == ProfileInputKind::SteamId64) {
+        config_.ownSteamId64 = value;
+        SaveConfigNow();
+        StartFriendImport(value);
+        return;
+    }
+    if (kind == ProfileInputKind::Vanity) {
+        pendingVanity_ = true;
+        pendingVanityIsOwn_ = true;
+        statusMessage_ = "Resolviendo tu perfil de Steam...";
+        const std::string vanity = value;
+        const std::string key = apiKey_;
+        auto alive = alive_;
+        worker_.Post([this, vanity, key, alive]() {
+            HttpClient http;
+            std::string steamid;
+            const steam::FetchOutcome outcome = steam::ResolveVanity(http, key, vanity, steamid);
+            auto* payload = new VanityResult();
+            payload->vanity = vanity;
+            payload->steamid64 = steamid;
+            payload->ok = outcome.status == FetchStatus::Ok;
+            payload->message = outcome.message;
+            if (alive->load()) {
+                if (PostMessageW(hwnd_, WM_SRP_VANITY, 0, reinterpret_cast<LPARAM>(payload)) == FALSE) {
+                    delete payload;
+                }
+            } else {
+                delete payload;
+            }
+        });
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        return;
+    }
+    MessageBoxW(hwnd_,
+                L"No se pudo detectar tu cuenta de Steam y el valor introducido no es valido.\n"
+                L"Indica tu SteamID64 o la URL de tu perfil.",
+                L"Importar amigos", MB_OK | MB_ICONWARNING);
+}
+
+void MainWindow::StartFriendImport(const std::string& ownSteamId) {
+    if (pendingFriends_) return;
+    pendingFriends_ = true;
+    statusMessage_ = "Buscando tus amigos en Steam...";
+    InvalidateRect(hwnd_, nullptr, FALSE);
+
+    const std::string key = apiKey_;
+    auto alive = alive_;
+    worker_.Post([this, ownSteamId, key, alive]() {
+        HttpClient http;
+        std::vector<Profile> friends;
+        const steam::FetchOutcome outcome = steam::FetchFriendProfiles(http, key, ownSteamId, friends);
+
+        std::string ownName;
+        if (outcome.status == FetchStatus::Ok) {
+            const HttpResponse response = http.Get(steam::PlayerSummariesUrl(key, ownSteamId));
+            if (response.Ok()) {
+                std::vector<Profile> players;
+                std::string message;
+                if (steam::ParsePlayerSummariesListJson(response.body, players, message) ==
+                        FetchStatus::Ok &&
+                    !players.empty()) {
+                    ownName = players.front().personaName;
+                }
+            }
+        }
+
+        auto* result = new FriendsResult();
+        result->ok = outcome.status == FetchStatus::Ok;
+        result->message = outcome.message;
+        result->friends = std::move(friends);
+        result->ownSteamId = ownSteamId;
+        result->ownPersonaName = ownName;
+        if (alive->load()) {
+            if (PostMessageW(hwnd_, WM_SRP_FRIENDS, 0, reinterpret_cast<LPARAM>(result)) == FALSE) {
+                delete result;
+            }
+        } else {
+            delete result;
+        }
+    });
+}
+
+void MainWindow::ApplyImportedFriends(std::vector<Profile> friends) {
+    // Descarta el propio perfil y los ya seguidos.
+    friends.erase(std::remove_if(friends.begin(), friends.end(),
+                                 [&](const Profile& profile) {
+                                     return profile.steamid64 == config_.ownSteamId64 ||
+                                            FindProfile(profile.steamid64) != nullptr;
+                                 }),
+                  friends.end());
+
+    if (friends.empty()) {
+        statusMessage_ = "No hay amigos nuevos que anadir.";
+        MessageBoxW(hwnd_,
+                    L"No se encontraron amigos nuevos que anadir (o ya los sigues a todos).",
+                    L"Importar amigos", MB_OK | MB_ICONINFORMATION);
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        return;
+    }
+
+    const std::string ownName =
+        config_.ownPersonaName.empty() ? "tu cuenta de Steam" : config_.ownPersonaName;
+    const std::string intro = "Amigos de " + ownName + ": " + std::to_string(friends.size()) +
+                              " disponibles para importar.";
+    const std::vector<Profile> selected = ShowImportDialog(hwnd_, intro, friends);
+    if (selected.empty()) {
+        statusMessage_ = "Importacion cancelada.";
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        return;
+    }
+
+    for (const Profile& profile : selected) {
+        config_.profiles.push_back(profile);
+        ProfileActivity activity;
+        activity.steamid64 = profile.steamid64;
+        activity.personaName = profile.personaName;
+        activity.avatarUrl = profile.avatarUrl;
+        activities_[profile.steamid64] = activity;
+    }
+    if (selectedProfile_.empty()) {
+        selectedProfile_ = selected.front().steamid64;
+        config_.prefs.lastSelectedProfile = selectedProfile_;
+    }
+
+    SaveConfigNow();
+    ReloadProfiles();
+    LayoutLists();
+    InvalidateRect(hwnd_, nullptr, FALSE);
+    statusMessage_ = "Integrantes anadidos: " + std::to_string(selected.size()) + ".";
+    RefreshProfiles(true);
+}
+
 void MainWindow::EditSelectedProfile() {
     if (selectedProfile_.empty()) return;
     const Profile* profile = FindProfile(selectedProfile_);
@@ -1183,16 +1395,36 @@ void MainWindow::OpenSettings() {
 void MainWindow::OpenApiKeyDialog() {
     bool changed = false;
     ShowApiKeyDialog(hwnd_, worker_, changed);
-    if (changed) {
-        hasApiKey_ = creds::LoadApiKey(apiKey_);
-        if (!hasApiKey_) apiKey_.clear();
-        if (!hasApiKey_ && !demoMode_) {
-            statusMessage_ = "No hay clave de API. Anade una para consultar Steam.";
-        } else if (hasApiKey_) {
-            statusMessage_ = "Clave de API actualizada. Pulse Actualizar.";
-        }
+    if (!changed) return;
+
+    hasApiKey_ = creds::LoadApiKey(apiKey_);
+    if (!hasApiKey_) apiKey_.clear();
+
+    // Al aportar una clave se sale del modo de demostracion automaticamente.
+    if (hasApiKey_ && demoMode_ && config_.profiles.empty()) {
+        SetDemoMode(false);
+    }
+
+    if (!hasApiKey_) {
+        statusMessage_ = demoMode_
+                             ? "Modo de demostracion: los datos mostrados son ficticios."
+                             : "No hay clave de API. Anade una para consultar Steam.";
         RebuildCombos();
+        ComputeLayout();
         InvalidateRect(hwnd_, nullptr, FALSE);
+        return;
+    }
+
+    statusMessage_ = "Clave de API guardada.";
+    RebuildCombos();
+    ComputeLayout();
+    InvalidateRect(hwnd_, nullptr, FALSE);
+
+    // Primera vez: importa los amigos automaticamente. Si ya hay integrantes, refresca.
+    if (config_.profiles.empty()) {
+        ImportFriends();
+    } else {
+        RefreshProfiles(true);
     }
 }
 
@@ -1220,14 +1452,18 @@ void MainWindow::ComputeLayout() {
 
     const int titleH = theme_.Px(36);
     const int btnH = theme_.Px(kBtnH);
-    rcSidebarList_ = {rcSidebar_.left, rcSidebar_.top + titleH, rcSidebar_.right,
-                      rcSidebar_.bottom - btnH - pad};
 
     const int buttonWidth = (rcSidebar_.right - rcSidebar_.left - pad * 2 - gap * 2) / 3;
     const int buttonY = rcSidebar_.bottom - btnH - pad / 2;
     rcBtnAdd_ = {rcSidebar_.left + pad, buttonY, rcSidebar_.left + pad + buttonWidth, buttonY + btnH};
     rcBtnEdit_ = {rcBtnAdd_.right + gap, buttonY, rcBtnAdd_.right + gap + buttonWidth, buttonY + btnH};
     rcBtnRemove_ = {rcBtnEdit_.right + gap, buttonY, rcBtnEdit_.right + gap + buttonWidth, buttonY + btnH};
+
+    const int importY = buttonY - gap - btnH;
+    rcBtnImport_ = {rcSidebar_.left + pad, importY, rcSidebar_.right - pad, importY + btnH};
+
+    rcSidebarList_ = {rcSidebar_.left, rcSidebar_.top + titleH, rcSidebar_.right,
+                      importY - gap};
 
     const int toolbarHeight = rcToolbar_.bottom - rcToolbar_.top;
     const int toolbarY = rcToolbar_.top + (toolbarHeight - btnH) / 2;
@@ -1615,6 +1851,12 @@ void MainWindow::DrawSidebar(Gdiplus::Graphics& g) {
     DrawScrollbar(g, rcSidebarTrack_, sidebarContentHeight_, sidebarScroll_);
 
     {
+        const bool enabled = !demoMode_ && hasApiKey_ && !pendingFriends_;
+        const int i = enabled ? AddHit(Hit::ImportFriends, rcBtnImport_) : -1;
+        const std::string label = pendingFriends_ ? "Buscando amigos..." : "Importar de Steam";
+        DrawButton(g, rcBtnImport_, label, 1, i == hoverIndex_, i == pressedIndex_, enabled);
+    }
+    {
         const int i = AddHit(Hit::AddProfile, rcBtnAdd_);
         DrawButton(g, rcBtnAdd_, "Anadir", 0, i == hoverIndex_, i == pressedIndex_, !demoMode_);
     }
@@ -1662,7 +1904,8 @@ void MainWindow::DrawContent(Gdiplus::Graphics& g) {
             subtitle = "Estos datos son ficticios. Anade una clave de API para ver actividad real.";
         } else if (displayProfiles_.empty()) {
             title = "Todavia no hay integrantes";
-            subtitle = "Pulsa \"Anadir\" en la izquierda para agregar un perfil de Steam.";
+            subtitle =
+                "Pulsa \"Importar de Steam\" para traer a tus amigos, o \"Anadir\" para un perfil.";
         } else if (!hasApiKey_) {
             title = "Falta la clave de API";
             subtitle = "Pulsa \"Clave API\" para introducir tu clave de Steam Web API.";

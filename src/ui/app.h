@@ -23,6 +23,7 @@ constexpr UINT WM_SRP_ACTIVITY = WM_APP + 1;   // lParam: ActivityResult*
 constexpr UINT WM_SRP_IMAGE_OK = WM_APP + 2;   // lParam: std::string* (clave)
 constexpr UINT WM_SRP_IMAGE_FAIL = WM_APP + 3; // lParam: std::string* (clave)
 constexpr UINT WM_SRP_VANITY = WM_APP + 4;     // lParam: VanityResult*
+constexpr UINT WM_SRP_FRIENDS = WM_APP + 5;    // lParam: FriendsResult*
 
 struct ActivityResult {
     ProfileActivity activity;
@@ -37,6 +38,15 @@ struct VanityResult {
     std::string steamid64;
     bool ok = false;
     std::string message;
+};
+
+// Resultado de la importacion de amigos (recibido desde el hilo de trabajo).
+struct FriendsResult {
+    std::vector<Profile> friends;
+    bool ok = false;
+    std::string message;
+    std::string ownSteamId;
+    std::string ownPersonaName;
 };
 
 class MainWindow {
@@ -61,6 +71,7 @@ private:
         AddProfile,
         EditProfile,
         RemoveProfile,
+        ImportFriends,
         TabGames,
         TabOverview,
         HideLow,
@@ -124,6 +135,9 @@ private:
     void RebuildCombos();
     void RefreshProfiles(bool all);
     void AddProfileDialog();
+    void ImportFriends();
+    void StartFriendImport(const std::string& ownSteamId);
+    void ApplyImportedFriends(std::vector<Profile> friends);
     void EditSelectedProfile();
     void RemoveSelectedProfile();
     void OpenSettings();
@@ -208,7 +222,9 @@ private:
     std::vector<Profile> displayProfiles_;
     std::vector<ContentEntry> contentEntries_;
     bool pendingVanity_ = false;
+    bool pendingVanityIsOwn_ = false;
     std::string pendingVanityAlias_;
+    bool pendingFriends_ = false;
     bool rebuildingCombos_ = false;
     bool configDirty_ = false;
     std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
@@ -262,6 +278,7 @@ private:
     RECT rcBtnAdd_{};
     RECT rcBtnEdit_{};
     RECT rcBtnRemove_{};
+    RECT rcBtnImport_{};
     RECT rcTabGames_{};
     RECT rcTabOverview_{};
     RECT rcHideLow_{};

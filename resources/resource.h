@@ -7,6 +7,7 @@
 #define IDD_SETTINGS 102
 #define IDD_APIKEY 103
 #define IDD_ABOUT 104
+#define IDD_IMPORT 105
 
 // Dialogo de integrante
 #define IDC_PROFILE_INPUT 1001
@@ -35,3 +36,10 @@
 
 // Dialogo Acerca de
 #define IDC_ABOUT_TEXT 1030
+
+// Dialogo de importacion de amigos
+#define IDC_IMPORT_LIST 1040
+#define IDC_IMPORT_HINT 1041
+#define IDC_IMPORT_COUNT 1042
+#define IDC_IMPORT_ALL 1043
+#define IDC_IMPORT_NONE 1044

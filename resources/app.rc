@@ -75,3 +75,20 @@ BEGIN
                     IDC_ABOUT_TEXT, 12, 44, 276, 60
     DEFPUSHBUTTON   "Cerrar", IDOK, 234, 122, 54, 15, BS_OWNERDRAW
 END
+
+IDD_IMPORT DIALOGEX 0, 0, 320, 224
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Importar amigos de Steam"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "Elige a que amigos de Steam quieres seguir:", -1, 10, 10, 300, 9
+    LTEXT           "", IDC_IMPORT_HINT, 10, 21, 300, 9
+    LISTBOX         IDC_IMPORT_LIST, 10, 33, 300, 140,
+                    LBS_EXTENDEDSEL | LBS_NOINTEGRALHEIGHT | LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Usa Ctrl o Mayus para seleccionar varios.", -1, 10, 178, 300, 9
+    LTEXT           "", IDC_IMPORT_COUNT, 10, 189, 300, 9
+    PUSHBUTTON      "Seleccionar todos", IDC_IMPORT_ALL, 10, 202, 78, 15, BS_OWNERDRAW
+    PUSHBUTTON      "Ninguno", IDC_IMPORT_NONE, 92, 202, 56, 15, BS_OWNERDRAW
+    DEFPUSHBUTTON   "Anadir seleccionados", IDOK, 166, 202, 92, 15, BS_OWNERDRAW
+    PUSHBUTTON      "Cancelar", IDCANCEL, 262, 202, 48, 15, BS_OWNERDRAW
+END
