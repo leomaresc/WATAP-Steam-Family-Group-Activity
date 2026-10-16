@@ -50,6 +50,7 @@ add_library(srp_core STATIC
     src/common/paths.cpp
     src/steam/http.cpp
     src/steam/steam_api.cpp
+    src/steam/local_steam.cpp
     src/steam/demo_data.cpp
     src/storage/config.cpp
     src/storage/cache.cpp

@@ -85,6 +85,11 @@ int SanitizeConfig(AppConfig& config) {
     }
     config.profiles = std::move(valid);
 
+    if (!IsValidSteamId64(config.ownSteamId64)) {
+        config.ownSteamId64.clear();
+        config.ownPersonaName.clear();
+    }
+
     if (!config.prefs.lastSelectedProfile.empty() &&
         !std::any_of(config.profiles.begin(), config.profiles.end(), [&](const Profile& profile) {
             return profile.steamid64 == config.prefs.lastSelectedProfile;
@@ -110,6 +115,9 @@ std::string ConfigToJson(const AppConfig& config) {
     }
     root["profiles"] = std::move(profiles);
 
+    root["ownSteamId64"] = config.ownSteamId64;
+    root["ownPersonaName"] = config.ownPersonaName;
+
     Json prefs;
     prefs["autoRefreshEnabled"] = config.prefs.autoRefreshEnabled;
     prefs["autoRefreshMinutes"] = config.prefs.autoRefreshMinutes;
@@ -134,6 +142,8 @@ bool ConfigFromJson(const std::string& json, AppConfig& out, std::string& errorO
 
     AppConfig config = DefaultConfig();
     config.version = GetInt(root, "version", 1);
+    config.ownSteamId64 = GetString(root, "ownSteamId64", "");
+    config.ownPersonaName = GetString(root, "ownPersonaName", "");
 
     if (root.contains("profiles") && root["profiles"].is_array()) {
         for (const Json& item : root["profiles"]) {

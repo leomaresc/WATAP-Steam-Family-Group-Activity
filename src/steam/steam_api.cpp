@@ -1,6 +1,7 @@
 #include "steam/steam_api.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <nlohmann/json.hpp>
 
 #include "common/format.h"
@@ -74,6 +75,21 @@ std::string RecentlyPlayedUrl(const std::string& apiKey, const std::string& stea
 std::string PlayerSummariesUrl(const std::string& apiKey, const std::string& steamid64) {
     return std::string(kApiBase) + "/ISteamUser/GetPlayerSummaries/v2/?key=" + UrlEncode(apiKey) +
            "&steamids=" + UrlEncode(steamid64) + "&format=json";
+}
+
+std::string PlayerSummariesUrl(const std::string& apiKey, const std::vector<std::string>& steamids) {
+    std::string joined;
+    for (size_t i = 0; i < steamids.size(); ++i) {
+        if (i > 0) joined.push_back(',');
+        joined += steamids[i];  // solo identificadores numericos validados
+    }
+    return std::string(kApiBase) + "/ISteamUser/GetPlayerSummaries/v2/?key=" + UrlEncode(apiKey) +
+           "&steamids=" + joined + "&format=json";
+}
+
+std::string FriendListUrl(const std::string& apiKey, const std::string& steamid64) {
+    return std::string(kApiBase) + "/ISteamUser/GetFriendList/v1/?key=" + UrlEncode(apiKey) +
+           "&steamid=" + UrlEncode(steamid64) + "&relationship=friend&format=json";
 }
 
 std::string ResolveVanityUrl(const std::string& apiKey, const std::string& vanity) {
@@ -176,6 +192,66 @@ FetchStatus ParsePlayerSummariesJson(const std::string& body, Profile& out, std:
     return FetchStatus::Ok;
 }
 
+FetchStatus ParsePlayerSummariesListJson(const std::string& body, std::vector<Profile>& out,
+                                        std::string& message) {
+    out.clear();
+    const Json root = ParseSafe(body);
+    if (root.is_discarded() || !root.is_object() || !root.contains("response") ||
+        !root["response"].is_object()) {
+        message = "Respuesta JSON no valida de Steam.";
+        return FetchStatus::NetworkError;
+    }
+    const Json& response = root["response"];
+    if (response.contains("players") && response["players"].is_array()) {
+        for (const Json& player : response["players"]) {
+            if (!player.is_object()) continue;
+            Profile profile;
+            if (player.contains("steamid") && player["steamid"].is_string()) {
+                profile.steamid64 = player["steamid"].get<std::string>();
+            }
+            if (!IsValidSteamId64(profile.steamid64)) continue;
+            if (player.contains("personaname") && player["personaname"].is_string()) {
+                profile.personaName = player["personaname"].get<std::string>();
+            }
+            if (player.contains("avatarfull") && player["avatarfull"].is_string()) {
+                profile.avatarUrl = player["avatarfull"].get<std::string>();
+            } else if (player.contains("avatarmedium") && player["avatarmedium"].is_string()) {
+                profile.avatarUrl = player["avatarmedium"].get<std::string>();
+            }
+            out.push_back(std::move(profile));
+        }
+    }
+    message.clear();
+    return FetchStatus::Ok;
+}
+
+FetchStatus ParseFriendListJson(const std::string& body, std::vector<std::string>& out,
+                                std::string& message) {
+    out.clear();
+    const Json root = ParseSafe(body);
+    if (root.is_discarded() || !root.is_object()) {
+        message = "Respuesta JSON no valida de Steam.";
+        return FetchStatus::NetworkError;
+    }
+    // La ausencia de "friendslist" suele indicar una lista de amigos privada.
+    if (!root.contains("friendslist") || !root["friendslist"].is_object()) {
+        message = "No se pudo obtener la lista de amigos (puede que sea privada).";
+        return FetchStatus::PrivateOrUnavailable;
+    }
+    const Json& list = root["friendslist"];
+    if (list.contains("friends") && list["friends"].is_array()) {
+        for (const Json& item : list["friends"]) {
+            if (!item.is_object()) continue;
+            if (!item.contains("steamid") || !item["steamid"].is_string()) continue;
+            const std::string id = item["steamid"].get<std::string>();
+            if (IsValidSteamId64(id)) out.push_back(id);
+        }
+    }
+    message = out.empty() ? "La lista de amigos esta vacia."
+                          : "Amigos encontrados: " + std::to_string(out.size()) + ".";
+    return FetchStatus::Ok;
+}
+
 FetchStatus ParseResolveVanityJson(const std::string& body, std::string& steamidOut,
                                    std::string& message) {
     const Json root = ParseSafe(body);
@@ -271,6 +347,67 @@ FetchOutcome ResolveVanity(HttpClient& http, const std::string& apiKey,
     if (outcome.status == FetchStatus::Ok) {
         outcome.message = "Perfil resuelto correctamente.";
     }
+    return outcome;
+}
+
+FetchOutcome FetchFriendProfiles(HttpClient& http, const std::string& apiKey,
+                                 const std::string& steamid64, std::vector<Profile>& out) {
+    FetchOutcome outcome;
+    out.clear();
+    if (apiKey.empty()) {
+        outcome.status = FetchStatus::InvalidApiKey;
+        outcome.message = DefaultStatusMessage(FetchStatus::InvalidApiKey);
+        return outcome;
+    }
+
+    const HttpResponse friends = http.Get(FriendListUrl(apiKey, steamid64));
+    if (!friends.Ok()) {
+        // Steam devuelve 401 cuando la lista de amigos no es publica.
+        if (friends.statusCode == 401 || friends.statusCode == 403) {
+            outcome.status = FetchStatus::PrivateOrUnavailable;
+            outcome.message =
+                "La lista de amigos de esa cuenta es privada. Ponla como publica en Steam "
+                "para poder importar.";
+            return outcome;
+        }
+        outcome.status = StatusFromHttp(friends, outcome.message);
+        return outcome;
+    }
+
+    std::vector<std::string> ids;
+    const FetchStatus parsed = ParseFriendListJson(friends.body, ids, outcome.message);
+    if (parsed != FetchStatus::Ok) {
+        outcome.status = parsed;
+        return outcome;
+    }
+    if (ids.empty()) {
+        outcome.status = FetchStatus::Ok;
+        outcome.message = "No hay amigos que importar.";
+        return outcome;
+    }
+
+    // GetPlayerSummaries acepta como maximo 100 identificadores por llamada.
+    constexpr size_t kBatch = 100;
+    for (size_t start = 0; start < ids.size(); start += kBatch) {
+        const size_t end = std::min(ids.size(), start + kBatch);
+        const std::vector<std::string> chunk(ids.begin() + static_cast<std::ptrdiff_t>(start),
+                                             ids.begin() + static_cast<std::ptrdiff_t>(end));
+        const HttpResponse response = http.Get(PlayerSummariesUrl(apiKey, chunk));
+        if (!response.Ok()) {
+            outcome.status = StatusFromHttp(response, outcome.message);
+            return outcome;
+        }
+        std::vector<Profile> players;
+        const FetchStatus status = ParsePlayerSummariesListJson(response.body, players, outcome.message);
+        if (status != FetchStatus::Ok) {
+            outcome.status = status;
+            return outcome;
+        }
+        for (Profile& player : players) out.push_back(std::move(player));
+    }
+
+    outcome.status = FetchStatus::Ok;
+    outcome.message = "Amigos encontrados: " + std::to_string(out.size()) + ".";
     return outcome;
 }
 

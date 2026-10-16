@@ -76,6 +76,10 @@ struct AppConfig {
     int version = 1;
     std::vector<Profile> profiles;
     Preferences prefs;
+    // Perfil propio de Steam (detectado del cliente o indicado una vez). Sirve para
+    // importar automaticamente la lista de amigos. Vacio si aun no se conoce.
+    std::string ownSteamId64;
+    std::string ownPersonaName;
 };
 
 }  // namespace srp

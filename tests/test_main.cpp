@@ -9,6 +9,7 @@
 #include "common/models.h"
 #include "common/paths.h"
 #include "steam/demo_data.h"
+#include "steam/local_steam.h"
 #include "steam/steam_api.h"
 #include "storage/cache.h"
 #include "storage/config.h"
@@ -254,6 +255,22 @@ void TestConfig() {
     Check(json.find("api") == std::string::npos || json.find("\"apiKey\"") == std::string::npos,
           "no se guardan claves en la configuracion");
 
+    // Perfil propio (para importar amigos) se conserva.
+    srp::AppConfig withOwn = srp::DefaultConfig();
+    withOwn.ownSteamId64 = "76561198000000009";
+    withOwn.ownPersonaName = "Yo";
+    srp::AppConfig ownLoaded;
+    Check(srp::ConfigFromJson(srp::ConfigToJson(withOwn), ownLoaded, error),
+          "config con perfil propio leida");
+    CheckEq(ownLoaded.ownSteamId64, "76561198000000009", "perfil propio recuperado");
+    CheckEq(ownLoaded.ownPersonaName, "Yo", "nombre propio recuperado");
+    srp::AppConfig badOwn = srp::DefaultConfig();
+    badOwn.ownSteamId64 = "malo";
+    badOwn.ownPersonaName = "X";
+    srp::SanitizeConfig(badOwn);
+    Check(badOwn.ownSteamId64.empty(), "perfil propio invalido descartado");
+    Check(badOwn.ownPersonaName.empty(), "nombre propio se limpia con el perfil invalido");
+
     // Saneado: perfil invalido descartado y umbrales corrigidos.
     srp::AppConfig bad = srp::DefaultConfig();
     srp::Profile invalid;
@@ -310,6 +327,111 @@ void TestDemoData() {
     Check(!srp::demo::IsDemoProfile("76561198000000001"), "perfil real no es demo");
 }
 
+// --- Lista de amigos e importacion por lotes ---
+void TestFriendParsing() {
+    Section("Analisis de GetFriendList y resumenes por lotes");
+    const std::string friends = R"({
+        "friendslist": {
+            "friends": [
+                {"steamid": "76561198000000002", "relationship": "friend", "friend_since": 1500000000},
+                {"steamid": "76561198000000003", "relationship": "friend", "friend_since": 1600000000},
+                {"steamid": "no-valido", "relationship": "friend", "friend_since": 1}
+            ]
+        }
+    })";
+    std::vector<std::string> ids;
+    std::string message;
+    Check(srp::steam::ParseFriendListJson(friends, ids, message) == srp::FetchStatus::Ok,
+          "lista de amigos analizada");
+    CheckEqInt(static_cast<long long>(ids.size()), 2, "solo identificadores validos conservados");
+    CheckEq(ids[0], "76561198000000002", "primer amigo");
+
+    std::vector<std::string> none;
+    Check(srp::steam::ParseFriendListJson("{\"response\":{}}", none, message) ==
+              srp::FetchStatus::PrivateOrUnavailable,
+          "lista de amigos privada detectada");
+    Check(!message.empty(), "mensaje de lista privada presente");
+
+    const std::string summaries = R"({
+        "response": {
+            "players": [
+                {"steamid": "76561198000000002", "personaname": "Bruno", "avatarfull": "https://a/b.jpg"},
+                {"steamid": "76561198000000003", "personaname": "Carla", "avatarmedium": "https://a/c.jpg"},
+                {"steamid": "raro"}
+            ]
+        }
+    })";
+    std::vector<srp::Profile> players;
+    Check(srp::steam::ParsePlayerSummariesListJson(summaries, players, message) ==
+              srp::FetchStatus::Ok,
+          "resumenes por lotes analizados");
+    CheckEqInt(static_cast<long long>(players.size()), 2, "solo jugadores validos");
+    CheckEq(players[1].personaName, "Carla", "nombre del segundo jugador");
+    CheckEq(players[1].avatarUrl, "https://a/c.jpg", "avatar medium como respaldo");
+}
+
+// --- Deteccion de la cuenta local de Steam ---
+void TestLocalSteam() {
+    Section("Deteccion local de la cuenta de Steam");
+    const std::string vdf = R"("users"
+{
+    "76561198000000001"
+    {
+        "AccountName"       "ana"
+        "PersonaName"       "Ana"
+        "RememberPassword"  "1"
+        "MostRecent"        "0"
+        "Timestamp"         "1600000000"
+    }
+    "76561198000000002"
+    {
+        "AccountName"       "bruno"
+        "PersonaName"       "Bruno"
+        "RememberPassword"  "1"
+        "MostRecent"        "1"
+        "Timestamp"         "1700000000"
+    }
+})";
+    srp::steam::LocalAccount account;
+    Check(srp::steam::ParseLoginUsersVdf(vdf, account), "loginusers.vdf analizado");
+    CheckEq(account.steamid64, "76561198000000002", "cuenta mas reciente elegida");
+    CheckEq(account.personaName, "Bruno", "nombre de la cuenta reciente");
+    Check(account.mostRecent, "marca MostRecent respetada");
+
+    // Sin MostRecent: se elige la marca de tiempo mas alta.
+    const std::string noRecent = R"("users"
+{
+    "76561198000000001" { "Timestamp" "100" }
+    "76561198000000009" { "Timestamp" "900" }
+})";
+    srp::steam::LocalAccount second;
+    Check(srp::steam::ParseLoginUsersVdf(noRecent, second), "sin MostRecent tambien se analiza");
+    CheckEq(second.steamid64, "76561198000000009", "se elige la marca de tiempo mayor");
+
+    srp::steam::LocalAccount empty;
+    Check(!srp::steam::ParseLoginUsersVdf("basura sin datos", empty),
+          "contenido no valido rechazado");
+
+    // Formato real de Steam: claves en minusculas y sin MostRecent.
+    const std::string modern = R"("users"
+{
+    "76561198084172465"
+    {
+        "AccountName"       "megafronnyyt"
+        "PersonaName"       "Diamantoso"
+        "RememberPassword"  "1"
+        "AutoLogin"         "1"
+        "timestamp"         "1792159688"
+    }
+})";
+    srp::steam::LocalAccount modernAccount;
+    Check(srp::steam::ParseLoginUsersVdf(modern, modernAccount),
+          "formato moderno (minusculas) analizado");
+    CheckEq(modernAccount.steamid64, "76561198084172465", "steamid del formato moderno");
+    CheckEq(modernAccount.personaName, "Diamantoso", "nombre del formato moderno");
+    CheckEq(modernAccount.accountName, "megafronnyyt", "cuenta del formato moderno");
+}
+
 // --- URLs de la API ---
 void TestUrls() {
     Section("Construccion de URLs");
@@ -325,6 +447,16 @@ void TestUrls() {
     const std::string vanity = srp::steam::ResolveVanityUrl("CLAVE", "gaben");
     Check(vanity.find("ResolveVanityURL/v1/") != std::string::npos, "endpoint vanity");
     Check(vanity.find("vanityurl=gaben") != std::string::npos, "vanity incluido");
+
+    const std::string friends = srp::steam::FriendListUrl("CLAVE", "76561198000000001");
+    Check(friends.find("GetFriendList/v1/") != std::string::npos, "endpoint de amigos");
+    Check(friends.find("relationship=friend") != std::string::npos, "relacion friend");
+    const std::string batch =
+        srp::steam::PlayerSummariesUrl("CLAVE",
+                                       std::vector<std::string>{"76561198000000001",
+                                                                "76561198000000002"});
+    Check(batch.find("steamids=76561198000000001,76561198000000002") != std::string::npos,
+          "resumenes por lotes separados por coma");
 }
 
 }  // namespace
@@ -342,6 +474,8 @@ int main() {
     TestConfig();
     TestCache();
     TestDemoData();
+    TestFriendParsing();
+    TestLocalSteam();
     TestUrls();
 
     std::printf("\n%d comprobaciones, %d fallos\n", g_checks, g_failures);
