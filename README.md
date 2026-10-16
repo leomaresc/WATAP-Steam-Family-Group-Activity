@@ -15,6 +15,10 @@ ejecutarse: es un unico `.exe` que enlaza estaticamente el runtime de Visual C++
 
 - **Integrantes (A):** lista lateral con avatar, nombre publico, numero de juegos recientes y
   fecha de la ultima consulta. Permite anadir, editar y quitar integrantes.
+- **Importacion automatica de tus amistades:** con la clave de API configurada, el boton
+  **Importar de Steam** detecta solo tu cuenta de Steam en el equipo, lee tu lista de amigos y
+  te muestra una lista para marcar a quien seguir. No hay que escribir el SteamID de cada
+  persona.
 - **Juegos recientes (B):** tarjetas compactas por juego con portada, nombre, tiempo de las
   ultimas dos semanas destacado y tiempo total acumulado. Boton para abrir la ficha en Steam.
 - **Vista general (C):** agrega y elimina duplicados de todos los integrantes, mostrando los
@@ -111,9 +115,34 @@ nombre de destino `SteamRecentPlay/SteamWebApiKey`. **Nunca** se escribe en `con
 codigo fuente, en los registros ni se pasa por la linea de comandos. Puedes borrarla con el
 boton **Eliminar** de ese mismo dialogo, o desde el Administrador de credenciales.
 
-### 2. Integrantes
+Justo despues de guardar la clave por primera vez, la app intenta **importar tus amigos
+automaticamente** (ver el punto 2).
 
-Pulsa **Anadir** y escribe:
+### 2. Integrantes (importacion automatica)
+
+No hace falta escribir cada SteamID a mano:
+
+1. Pulsa **Importar de Steam** en la barra lateral.
+2. La app detecta **tu** cuenta de Steam leyendo la cuenta reciente del cliente de Steam
+   instalado (`loginusers.vdf`). Si no puede, te pedira tu perfil una sola vez.
+3. Descarga tu **lista de amigos** (nombre y avatar) y muestra una lista para marcar a quien
+   quieres seguir. Usa **Ctrl/Mayus** para seleccionar varios, o los botones **Seleccionar
+   todos** / **Ninguno**.
+4. Pulsa **Anadir seleccionados**.
+
+Si vuelves a pulsar **Importar de Steam** mas adelante, solo apareceran los amigos que aun no
+sigues.
+
+> La clave de API de Steam **no** identifica por si sola a que cuenta pertenece, y no existe un
+> endpoint publico documentado que lo haga. Por eso la app deduce tu cuenta del cliente local
+> (o te la pide una vez) y la recuerda en tu `config.json`.
+
+La lista de amigos debe estar **publica** en Steam; si es privada, Steam devuelve un error y la
+app te lo indica.
+
+#### Alta manual (opcional)
+
+Tambien puedes pulsar **Anadir** y escribir:
 
 - un **SteamID64** (17 digitos, empieza por `7656119...`);
 - una **URL de perfil** que contenga `/profiles/<id>` o `/id/<nombre>`;
@@ -151,7 +180,7 @@ que no se ha jugado.
 Todo se guarda en `%LOCALAPPDATA%\SteamRecentPlay`:
 
 ```
-config.json          integrantes y preferencias (nunca la clave de API)
+config.json          integrantes, preferencias y tu propio SteamID (nunca la clave de API)
 cache\               respuestas de la API en cache
 cache\images\        portadas descargadas
 ```
@@ -163,8 +192,11 @@ hilo de la interfaz, con tiempos de espera, para que la ventana nunca se bloquee
 ## Privacidad y red
 
 - Solo se usan endpoints **documentados** de la API Web de Steam:
-  `IPlayerService/GetRecentlyPlayedGames/v1`, `ISteamUser/GetPlayerSummaries/v2` y
-  `ISteamUser/ResolveVanityURL/v1`, sobre HTTPS (WinHTTP).
+  `IPlayerService/GetRecentlyPlayedGames/v1`, `ISteamUser/GetPlayerSummaries/v2`,
+  `ISteamUser/GetFriendList/v1` (para importar amigos) y `ISteamUser/ResolveVanityURL/v1`,
+  sobre HTTPS (WinHTTP).
+- La deteccion de tu propia cuenta lee unicamente `loginusers.vdf` del cliente de Steam
+  instalado (un archivo local de Steam); no es scraping ni accede a la web de Steam.
 - Las peticiones se hacen de forma espaciada y con cache, para ser respetuoso con los limites de
   uso (HTTP 429 se detecta y se muestra como "demasiadas solicitudes").
 - No se accede a datos privados ni a cookies.
@@ -173,16 +205,20 @@ hilo de la interfaz, con tiempos de espera, para que la ventana nunca se bloquee
 
 ## Pruebas
 
-`srp_tests` ejecuta **80 comprobaciones** sobre la logica no visual (`srp_core`), incluyendo:
+`srp_tests` ejecuta **108 comprobaciones** sobre la logica no visual (`srp_core`), incluyendo:
 
 - formateo de minutos y clasificacion de actividad reciente;
 - identificacion, validacion y resolucion de perfiles;
-- analisis de `GetRecentlyPlayedGames`, `GetPlayerSummaries` y `ResolveVanityURL`;
+- analisis de `GetRecentlyPlayedGames`, `GetPlayerSummaries` (individual y por lotes) y
+  `ResolveVanityURL`;
+- analisis de `GetFriendList` (incluida la deteccion de lista privada);
+- lectura de `loginusers.vdf` del cliente de Steam (incluido el formato real con claves en
+  minusculas);
 - perfiles privados o sin actividad;
 - ordenacion por actividad reciente;
 - cache de actividad y su refresco;
 - errores de red;
-- lectura y escritura de configuracion;
+- lectura y escritura de configuracion (incluido tu perfil propio);
 - datos del modo demostracion;
 - construccion de URLs.
 
@@ -192,28 +228,37 @@ hilo de la interfaz, con tiempos de espera, para que la ventana nunca se bloquee
 
 ---
 
-## Limitaciones y lo que no se ha verificado
+## Limitaciones y lo que se ha verificado
 
-Compromiso de honestidad sobre el estado real del proyecto:
+Compromiso de honestidad sobre el estado real del proyecto.
 
-- **No se ha probado contra la API real de Steam**, porque en el entorno de desarrollo no habia
-  una clave de API disponible. La integracion en vivo de `GetRecentlyPlayedGames`,
-  `GetPlayerSummaries` y `ResolveVanityURL` (y el mapeo exacto de errores como clave invalida o
-  perfil privado frente al servicio real) queda **sin verificar**. Lo que si esta verificado es
-  el analisis de las respuestas JSON con datos de ejemplo en las pruebas, y la interfaz completa
-  en modo demostracion.
+Verificado con una **clave de API real** durante el desarrollo (en un equipo con Steam
+instalado):
+
+- `GetRecentlyPlayedGames` y `GetPlayerSummaries` devuelven actividad, nombres y avatares
+  reales para varios integrantes.
+- La **importacion automatica** funciona de extremo a extremo: detecta la cuenta local, lee
+  `GetFriendList` y carga los nombres de los amigos con `GetPlayerSummaries`.
+- Carga de portadas desde el CDN de Steam.
+
+No verificado / limitaciones:
+
+- La ruta de **lista de amigos privada** (error 401) y el mapeo exacto de otros errores (clave
+  invalida, limite de peticiones 429) no se han ejercitado contra el servicio real; en las
+  pruebas se cubren con datos de ejemplo.
+- La deteccion de tu propia cuenta depende del cliente de Steam instalado; si falta, la app te
+  pide tu perfil una sola vez.
 - El modo demostracion usa **datos ficticios**; no representa a ninguna persona real.
 - No representa ningun tipo de "disponibilidad de copias" ni estado en tiempo real.
 
-Lo que **si** se ha verificado en este entorno:
+Verificado en el entorno de desarrollo:
 
 - Compilacion limpia en Release, sin avisos en el codigo del proyecto.
-- `SteamRecentPlay.exe` (~518 KiB) y `srp_tests.exe` (~349 KiB).
+- `SteamRecentPlay.exe` (~556 KiB) y `srp_tests.exe`.
 - Arranque de la aplicacion y estabilidad de la ventana principal.
-- Interfaz completa revisada por capturas: vista "Juegos recientes", "Vista general", vista de un
-  integrante, y los dialogos de Integrante, Ajustes, Clave API y Acerca de.
-- Carga de portadas desde el CDN de Steam en modo demostracion.
-- Las 80 comprobaciones de `srp_tests` pasan.
+- Interfaz completa revisada por capturas: vistas "Juegos recientes"/"Vista general"/integrante y
+  los dialogos de Integrante, Ajustes, Clave API, Importar amigos y Acerca de.
+- Las 108 comprobaciones de `srp_tests` pasan.
 
 ---
 
@@ -225,7 +270,7 @@ build.ps1               compilacion/pruebas por linea de comandos
 resources\              manifiesto, icono, plantillas de dialogo (.rc) y resource.h
 src\main.cpp            punto de entrada (wWinMain, GDI+, bucle de mensajes)
 src\ui\                 interfaz: ventana, temas, dibujo, dialogos, hilo de trabajo, cache de imagenes
-src\steam\              cliente HTTP (WinHTTP), API de Steam y datos de demostracion
+src\steam\              cliente HTTP (WinHTTP), API de Steam, deteccion de la cuenta local y datos demo
 src\storage\            configuracion en JSON, cache en disco y credenciales (Credential Manager)
 src\common\             modelos compartidos, formateo y rutas/utilidades
 tests\test_main.cpp     pruebas de consola de la logica no visual
