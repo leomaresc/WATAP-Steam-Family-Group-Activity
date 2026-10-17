@@ -1,85 +1,140 @@
 # What Are They Actually Playing? (WATAP)
 
-Visor **nativo y ultraligero** para Windows que muestra la actividad reciente de Steam de un
-grupo familiar: minutos jugados en las dos ultimas semanas, minutos acumulados, portadas y una
-vista general que combina los juegos de todos los integrantes para decidir que jugar.
+**Visor nativo y ultraligero para Windows que muestra la actividad reciente de Steam de tu grupo familiar.**
 
-La interfaz esta en espanol, con un diseno oscuro y compacto, dibujada a mano sobre GDI+ (salvo
-los campos de texto y los desplegables, que son controles nativos oscurecidos). **No** usa
-Electron, Chromium, WebView2, Node, Python, .NET ni Qt, y no necesita instalar nada para
-ejecutarse: es un unico `.exe` que enlaza estaticamente el runtime de Visual C++.
+![Estado](https://img.shields.io/badge/estado-en%20desarrollo%20activo-orange)
+![Plataforma](https://img.shields.io/badge/plataforma-Windows%2010%2F11%20x64-blue)
+![Lenguaje](https://img.shields.io/badge/C%2B%2B-20-blue)
+![Interfaz](https://img.shields.io/badge/UI-Win32%20%2B%20GDI%2B-lightgrey)
+![Dependencias](https://img.shields.io/badge/dependencias-ninguna-brightgreen)
+
+WATAP reúne en una sola ventana qué ha estado jugando tu familia en Steam: minutos de las
+**últimas dos semanas**, minutos **acumulados**, portadas y una **vista general** que combina
+los juegos de todos los integrantes, para decidir a qué jugar.
+
+Es una aplicación **nativa** (C++20 + Win32, dibujada a mano sobre GDI+) que se compila en un
+único `.exe` con el runtime de Visual C++ enlazado estáticamente. **No** usa Electron, Chromium,
+WebView2, Node, Python, .NET ni Qt: no hay que instalar nada para ejecutarla.
+
+> ### 🚧 Proyecto en desarrollo
+>
+> WATAP está **en desarrollo activo y mejora continua**. Funciona de extremo a extremo y se ha
+> probado con datos reales, pero todavía hay **ideas a medio desarrollar**, detalles por pulir y
+> partes sin verificar del todo (ver [Limitaciones](#limitaciones-y-verificación)). La interfaz,
+> las opciones y el formato de datos pueden cambiar entre versiones. Las sugerencias, ideas y
+> informes de errores son bienvenidos.
 
 ---
 
-## Que hace
+## Tabla de contenidos
 
-- **Integrantes (A):** lista lateral con avatar, nombre publico, numero de juegos recientes y
-  fecha de la ultima consulta. Permite anadir, editar y quitar integrantes.
-- **Importacion automatica de integrantes:** con la clave de API configurada, los botones
-  **Importar familia** e **Importar amigos** detectan solo tu cuenta de Steam en el equipo y
-  traen los miembros de tu **grupo familiar de Steam** o de tu **lista de amigos**, con una
-  lista para marcar a quien seguir. No hay que escribir el SteamID de cada persona.
-- **Juegos recientes (B):** tarjetas compactas por juego con portada, nombre, tiempo de las
-  ultimas dos semanas destacado y tiempo total acumulado. Boton para abrir la ficha en Steam.
-- **Vista general (C):** agrega y elimina duplicados de todos los integrantes, mostrando los
-  minutos de cada uno por titulo y resaltando de forma discreta el integrante con mas actividad
-  en ese juego.
-- **Filtros (D):** elegir integrante o ver a todos, ordenar por actividad reciente, buscar por
+- [Capturas](#capturas)
+- [¿Qué hace?](#qué-hace)
+- [¿Qué NO hace?](#qué-no-hace)
+- [Requisitos](#requisitos)
+- [Compilación y pruebas](#compilación-y-pruebas)
+- [Uso](#uso)
+  - [1) Clave de Steam Web API](#1-clave-de-steam-web-api)
+  - [2) Importar integrantes](#2-importar-integrantes)
+  - [3) Consultar actividad](#3-consultar-actividad)
+  - [4) Ajustes](#4-ajustes)
+- [Datos locales](#datos-locales)
+- [Privacidad y red](#privacidad-y-red)
+- [Pruebas automáticas](#pruebas-automáticas)
+- [Estado del proyecto y hoja de ruta](#estado-del-proyecto-y-hoja-de-ruta)
+- [Limitaciones y verificación](#limitaciones-y-verificación)
+- [Estructura del proyecto](#estructura-del-proyecto)
+- [Tecnologías](#tecnologías)
+- [Licencia](#licencia)
+
+---
+
+## Capturas
+
+| Juegos recientes | Vista general |
+| :---: | :---: |
+| ![Vista de juegos recientes](docs/captura-demo.png) | ![Vista general agregada](docs/captura-general.png) |
+
+> Capturas tomadas en **modo demostración**, con datos ficticios y claramente etiquetados.
+
+---
+
+## ¿Qué hace?
+
+- **A. Integrantes.** Lista lateral con avatar, nombre público, número de juegos recientes y
+  fecha de la última consulta. Permite añadir, editar y quitar integrantes.
+- **B. Juegos recientes.** Tarjetas compactas por juego con portada, nombre, tiempo de las
+  últimas dos semanas destacado y tiempo total acumulado. Botón para abrir la ficha en Steam.
+- **C. Vista general.** Agrega y elimina duplicados de todos los integrantes, mostrando los
+  minutos de cada uno por título y resaltando de forma discreta quién ha jugado más.
+- **D. Filtros.** Elegir integrante o ver a todos, ordenar por actividad reciente, buscar por
   nombre y ocultar juegos por debajo de un umbral de minutos.
 
-Ademas:
+Además:
 
-- Etiquetas de actividad **Alta / Moderada / Baja** con umbrales configurables (explicados en
-  Ajustes). La actividad **no** se presenta como "disponibilidad de copias" ni como "juego
-  libre": son datos historicos, nunca estado en tiempo real.
-- Actualizacion manual (integrante o todos), actualizacion automatica moderada opcional mientras
-  la app esta abierta, indicador de la ultima actualizacion correcta y **cache local** de
-  respuestas e imagenes.
-- Si falla la red se muestran los datos en cache y se avisa de que pueden estar desactualizados.
+- **Importación automática de integrantes.** No hay que escribir SteamIDs: los botones
+  **Importar familia** e **Importar amigos** detectan tu cuenta de Steam en el equipo y traen a
+  los miembros de tu **grupo familiar** o de tu **lista de amigos**, con una lista para marcar a
+  quién seguir.
+- **Etiquetas de actividad Alta / Moderada / Baja** con umbrales configurables. Son datos
+  históricos: **nunca** se presentan como "disponibilidad de copias" ni como estado en tiempo real.
+- **Actualización** manual (de un integrante o de todos), **actualización automática** opcional
+  mientras la app está abierta, indicador de la última actualización correcta y **caché local**
+  de respuestas e imágenes.
+- **Resiliencia de red.** Si falla la conexión, se muestran los datos en caché y se avisa de que
+  pueden estar desactualizados.
+- **Modo demostración** con datos ficticios para ver la interfaz sin credenciales.
 
-## Que NO hace
+## ¿Qué NO hace?
 
-- No muestra estado "en linea" ni "jugando ahora".
+- No muestra estado "en línea" ni "jugando ahora".
 - No usa scraping, cookies ni endpoints no documentados.
-- No pide la contrasena de Steam.
+- No pide la contraseña de Steam.
 - No instala servicios ni procesos en segundo plano.
 
 ---
 
-## Requisitos para compilar
+## Requisitos
 
 - **Windows 10/11 x64.**
-- **Visual Studio** con herramientas de C++ (se compilo con Visual Studio 18 Insiders, MSVC
-  14.50, Windows SDK 10.0.26100). Sirve cualquier VS 2022 con el conjunto de herramientas C++
-  y el SDK de Windows.
+- **Visual Studio** con herramientas de C++ (se compiló con Visual Studio 18 Insiders, MSVC
+  14.50, Windows SDK 10.0.26100). Sirve cualquier VS 2022 con el conjunto de herramientas C++ y
+  el SDK de Windows.
 - **CMake >= 3.20** y **Ninja** (ambos se incluyen con Visual Studio).
-- Sin dependencias de terceros: `nlohmann/json` va incluido como cabecera en
+- **Sin dependencias externas:** `nlohmann/json` va incluido como cabecera en
   `third_party/nlohmann/json.hpp`.
 
-## Compilar y probar
+Operativamente, para obtener la actividad de otras personas necesitarás:
 
-La forma mas rapida, desde la raiz del repositorio:
+- una **clave de Steam Web API** (gratuita), y
+- el **cliente de Steam instalado** en el equipo, para detectar tu cuenta y tu grupo familiar.
+
+## Compilación y pruebas
+
+La forma más rápida, desde la raíz del repositorio:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -Config Release -Test
 ```
 
-- `-Config Debug` para una compilacion de depuracion.
-- `-Test` compila y ejecuta la bateria de pruebas de consola.
+Opciones del script:
+
+- `-Config Debug` para una compilación de depuración.
+- `-Test` compila y ejecuta la batería de pruebas de consola.
 - `-Clean` borra el directorio `build\<Config>` antes de compilar.
 
-El script localiza Visual Studio con `vswhere`, llama a `vcvars64.bat`, configura CMake con el
+El script localiza Visual Studio con `vswhere`, carga `vcvars64.bat`, configura CMake con el
 generador Ninja y compila. Los binarios quedan en:
 
 ```
-build\Release\WATAP.exe             (aplicacion GUI)
-build\Release\srp_tests.exe         (pruebas) 
+build\Release\WATAP.exe             (aplicación GUI)
+build\Release\srp_tests.exe         (pruebas)
 ```
 
-### Compilacion manual (equivalente)
+### Compilación manual (equivalente)
 
-Desde un simbolo del sistema con el entorno de MSVC ya cargado
-(`vcvars64.bat`) y con `cmake`/`ninja` disponibles:
+Desde un símbolo del sistema con el entorno de MSVC ya cargado (`vcvars64.bat`) y con
+`cmake`/`ninja` disponibles:
 
 ```bat
 cmake -S . -B build\Release -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -87,38 +142,30 @@ cmake --build build\Release
 ctest --test-dir build\Release --output-on-failure
 ```
 
-## Ejecutar
-
-Doble clic sobre `build\Release\WATAP.exe`, o desde la terminal:
-
-```powershell
-.\build\Release\WATAP.exe
-```
-
-En el primer arranque, si no hay integrantes ni clave de API, se activa el **modo
-demostracion** con datos ficticios claramente etiquetados (`DEMO - ...`). Sirve para ver la
-interfaz sin credenciales.
-
 ---
 
 ## Uso
 
-### 1. Clave de Steam Web API
+Al abrir la app por primera vez, si no hay integrantes ni clave de API, se activa el **modo
+demostración** con datos ficticios (`DEMO - ...`) para que puedas ver la interfaz. Para usar
+datos reales, sigue estos pasos.
 
-1. Abre `steamcommunity.com/dev/apikey` (requiere iniciar sesion en Steam) y solicita una clave
-   propia. Tambien puedes pulsar el boton **Clave API** de la app, que enlaza a esa pagina.
-2. En la app, pulsa **Clave API**, pega la clave y pulsa **Guardar**. Con **Probar** se verifica
-   contra Steam antes de usarla.
+### 1) Clave de Steam Web API
 
-La clave se guarda **unicamente** en el Administrador de credenciales de Windows, con el
-nombre de destino `WATAP/SteamWebApiKey`. **Nunca** se escribe en `config.json`, en el
-codigo fuente, en los registros ni se pasa por la linea de comandos. Puedes borrarla con el
-boton **Eliminar** de ese mismo dialogo, o desde el Administrador de credenciales.
+1. Abre `steamcommunity.com/dev/apikey` (requiere iniciar sesión en Steam) y solicita una clave
+   propia. También puedes pulsar el botón **Clave API** de la app, que enlaza a esa página.
+2. En la app, pulsa **Clave API**, pega la clave y pulsa **Guardar**. El botón **Probar** la
+   verifica contra Steam antes de usarla.
 
-Justo despues de guardar la clave por primera vez, la app intenta **importar tu grupo familiar
-automaticamente** (ver el punto 2).
+La clave se guarda **únicamente** en el Administrador de credenciales de Windows, con el nombre
+de destino `WATAP/SteamWebApiKey`. **Nunca** se escribe en `config.json`, en el código fuente,
+en los registros ni se pasa por la línea de comandos. Puedes borrarla con el botón **Eliminar**
+de ese mismo diálogo o desde el Administrador de credenciales.
 
-### 2. Integrantes (importacion automatica)
+Justo después de guardar la clave por primera vez, la app intenta **importar tu grupo familiar
+automáticamente** (ver el punto 2).
+
+### 2) Importar integrantes
 
 No hace falta escribir cada SteamID a mano. Hay dos botones en la barra lateral:
 
@@ -128,65 +175,65 @@ No hace falta escribir cada SteamID a mano. Hay dos botones en la barra lateral:
 
 En ambos casos:
 
-1. Pulsa el boton correspondiente.
+1. Pulsa el botón correspondiente.
 2. La app detecta **tu** cuenta de Steam leyendo la cuenta reciente del cliente de Steam
-   instalado (`loginusers.vdf`). Si no puede, te pedira tu perfil una sola vez.
-3. Obtiene los integrantes (nombre y avatar) y muestra una lista para marcar a quien quieres
-   seguir. Usa **Ctrl/Mayus** para seleccionar varios, o los botones **Seleccionar todos** /
+   instalado (`loginusers.vdf`). Si no puede, te pedirá tu perfil una sola vez.
+3. Obtiene los integrantes (nombre y avatar) y muestra una lista para marcar a quién quieres
+   seguir. Usa **Ctrl/Mayús** para seleccionar varios, o los botones **Seleccionar todos** /
    **Ninguno**.
-4. Pulsa **Anadir seleccionados**.
+4. Pulsa **Añadir seleccionados**.
 
-Si vuelves a pulsarlo mas adelante, solo apareceran los integrantes que aun no sigues.
+Si vuelves a pulsarlo más adelante, solo aparecerán los integrantes que aún no sigues.
 
-#### De donde sale cada lista
+#### De dónde sale cada lista
 
-- **Amigos:** de `ISteamUser/GetFriendList/v1` (requiere que tu lista de amigos sea **publica**
-  en Steam; si es privada, Steam devuelve un error y la app te lo indica), y los nombres y
+- **Amigos:** de `ISteamUser/GetFriendList/v1` (requiere que tu lista de amigos sea **pública**
+  en Steam; si es privada, Steam devuelve un error y la app te lo indica) y los nombres y
   avatares de `ISteamUser/GetPlayerSummaries/v2`.
-- **Grupo familiar:** de tu propio cliente de Steam. El servicio `IFamilyGroupsService` de la
-  Web API **no acepta una clave de API normal** (necesita un token de sesion de la web de
-  Steam), asi que en su lugar la app lee la copia que Steam guarda en
+- **Grupo familiar:** del propio cliente de Steam. El servicio `IFamilyGroupsService` de la Web
+  API **no acepta una clave de API normal** (necesita un token de sesión de la web de Steam), así
+  que la app lee la copia que Steam guarda en
   `Steam/userdata/<tu cuenta>/config/localconfig.vdf` (bloque `FamilyGroup`) y luego pide los
-  nombres y avatares con `GetPlayerSummaries`. Es la misma fuente que usa el propio cliente; no
-  hay scraping ni cookies, solo lectura de un archivo local. Si esa cuenta no pertenece a
-  ningun grupo familiar, la app te lo indica.
+  nombres y avatares con `GetPlayerSummaries`. Es la misma fuente que usa el cliente; no hay
+  scraping ni cookies, solo lectura de un archivo local. Si esa cuenta no pertenece a ningún
+  grupo familiar, la app te lo indica.
 
-> La clave de API de Steam **no** identifica por si sola a que cuenta pertenece, y no existe un
-> endpoint publico documentado que lo haga. Por eso la app deduce tu cuenta del cliente local
-> (o te la pide una vez) y la recuerda en tu `config.json`.
+> La clave de API de Steam **no** identifica por sí sola a qué cuenta pertenece, y no existe un
+> endpoint público documentado que lo haga. Por eso la app deduce tu cuenta del cliente local (o
+> te la pide una vez) y la recuerda en tu `config.json`.
 
 #### Alta manual (opcional)
 
-Tambien puedes pulsar **Anadir** y escribir:
+También puedes pulsar **Añadir** y escribir:
 
-- un **SteamID64** (17 digitos, empieza por `7656119...`);
+- un **SteamID64** (17 dígitos, empieza por `7656119...`);
 - una **URL de perfil** que contenga `/profiles/<id>` o `/id/<nombre>`;
 - o un **nombre de perfil** (se resuelve con `ResolveVanityURL`, y requiere clave de API).
 
 Opcionalmente se puede asignar un **nombre local** para mostrarlo en la app.
 
-### 3. Consultar actividad
+### 3) Consultar actividad
 
 - **Actualizar** refresca el integrante seleccionado.
 - **Actualizar todo** refresca todos los integrantes.
-- El boton **Vista general / Juegos recientes** alterna entre la lista detallada y la vista
-  agregada de todos los integrantes.
+- **Juegos recientes / Vista general** alterna entre la lista detallada y la vista agregada de
+  todos los integrantes.
 
-### 4. Ajustes
+### 4) Ajustes
 
-- Actualizacion automatica mientras la app esta abierta y su intervalo (minutos).
+- Actualización automática mientras la app está abierta y su intervalo (minutos).
 - Mostrar u ocultar portadas.
-- Umbrales de actividad reciente: minutos en las dos ultimas semanas a partir de los cuales la
+- Umbrales de actividad reciente: minutos en las dos últimas semanas a partir de los cuales la
   actividad se considera **Moderada** y **Alta** (por debajo de moderada es **Baja**).
 - Ocultar juegos por debajo de un umbral de minutos recientes.
-- Borrar la cache local (respuestas e imagenes).
+- Borrar la caché local (respuestas e imágenes).
 
 ### Estados de consulta
 
-La app distingue explicitamente entre: consulta correcta con juegos; consulta correcta **sin**
-juegos recientes; datos **no disponibles o restringidos** por privacidad; error de conexion;
-clave invalida; y perfil invalido. Una lista vacia nunca se interpreta como prueba definitiva de
-que no se ha jugado.
+La app distingue explícitamente entre: consulta correcta **con** juegos; consulta correcta
+**sin** juegos recientes; datos **no disponibles o restringidos** por privacidad; error de
+conexión; clave inválida; y perfil inválido. Una lista vacía nunca se interpreta como prueba
+definitiva de que no se ha jugado.
 
 ---
 
@@ -196,55 +243,56 @@ Todo se guarda en `%LOCALAPPDATA%\WATAP`:
 
 ```
 config.json          integrantes, preferencias y tu propio SteamID (nunca la clave de API)
-cache\               respuestas de la API en cache
+cache\               respuestas de la API en caché
 cache\images\        portadas descargadas
 ```
 
-> Version anterior: la app se llamaba **Steam Recent Play**. La primera vez que arranca, si
-> existe `%LOCALAPPDATA%\SteamRecentPlay` y todavia no hay `%LOCALAPPDATA%\WATAP`, se mueve el
-> directorio completo (configuracion y cache) y la clave de API se traslada al nuevo nombre de
-> credencial (`WATAP/SteamWebApiKey`). No hay que volver a configurar nada.
+> **Migración desde la versión anterior.** La app se llamaba **Steam Recent Play**. La primera
+> vez que arranca, si existe `%LOCALAPPDATA%\SteamRecentPlay` y todavía no hay
+> `%LOCALAPPDATA%\WATAP`, se mueve el directorio completo (configuración y caché) y la clave de
+> API se traslada al nuevo nombre de credencial (`WATAP/SteamWebApiKey`). No hay que volver a
+> configurar nada.
 
-Las escrituras son atomicas (archivo temporal + reemplazo) y se agrupan para no castigar el
-disco. La red y las descargas de imagenes se ejecutan en un unico hilo de trabajo, fuera del
+Las escrituras son atómicas (archivo temporal + reemplazo) y se agrupan para no castigar el
+disco. La red y las descargas de imágenes se ejecutan en un único hilo de trabajo, fuera del
 hilo de la interfaz, con tiempos de espera, para que la ventana nunca se bloquee.
 
 ## Privacidad y red
 
 - Solo se usan endpoints **documentados** de la API Web de Steam:
   `IPlayerService/GetRecentlyPlayedGames/v1`, `ISteamUser/GetPlayerSummaries/v2`,
-  `ISteamUser/GetFriendList/v1` (para importar amigos) y `ISteamUser/ResolveVanityURL/v1`,
-  sobre HTTPS (WinHTTP).
-- La deteccion de tu propia cuenta lee unicamente `loginusers.vdf` del cliente de Steam
+  `ISteamUser/GetFriendList/v1` (para importar amigos) y `ISteamUser/ResolveVanityURL/v1`, sobre
+  HTTPS (WinHTTP).
+- La detección de tu propia cuenta lee únicamente `loginusers.vdf` del cliente de Steam
   instalado (un archivo local de Steam); no es scraping ni accede a la web de Steam.
 - El **grupo familiar** se lee de `userdata/<cuenta>/config/localconfig.vdf` del cliente de
-  Steam (bloque `FamilyGroup`), tambien un archivo local. El servicio `IFamilyGroupsService` de
-  la Web API **no** se usa: exige un token de sesion de la web de Steam, no una clave de API.
-- Las peticiones se hacen de forma espaciada y con cache, para ser respetuoso con los limites de
+  Steam (bloque `FamilyGroup`), también un archivo local. El servicio `IFamilyGroupsService` de
+  la Web API **no** se usa: exige un token de sesión de la web de Steam, no una clave de API.
+- Las peticiones se hacen de forma espaciada y con caché, para ser respetuoso con los límites de
   uso (HTTP 429 se detecta y se muestra como "demasiadas solicitudes").
 - No se accede a datos privados ni a cookies.
 
 ---
 
-## Pruebas
+## Pruebas automáticas
 
-`srp_tests` ejecuta **118 comprobaciones** sobre la logica no visual (`srp_core`), incluyendo:
+`srp_tests` ejecuta **118 comprobaciones** sobre la lógica no visual (`srp_core`), incluyendo:
 
-- formateo de minutos y clasificacion de actividad reciente;
-- identificacion, validacion y resolucion de perfiles;
-- analisis de `GetRecentlyPlayedGames`, `GetPlayerSummaries` (individual y por lotes) y
+- formateo de minutos y clasificación de actividad reciente;
+- identificación, validación y resolución de perfiles;
+- análisis de `GetRecentlyPlayedGames`, `GetPlayerSummaries` (individual y por lotes) y
   `ResolveVanityURL`;
-- analisis de `GetFriendList` (incluida la deteccion de lista privada);
+- análisis de `GetFriendList` (incluida la detección de lista privada);
 - lectura de `loginusers.vdf` del cliente de Steam (incluido el formato real con claves en
-  minusculas);
-- lectura del bloque `FamilyGroup` de `localconfig.vdf` y conversion de `accountid` a SteamID64;
+  minúsculas);
+- lectura del bloque `FamilyGroup` de `localconfig.vdf` y conversión de `accountid` a SteamID64;
 - perfiles privados o sin actividad;
-- ordenacion por actividad reciente;
-- cache de actividad y su refresco;
+- ordenación por actividad reciente;
+- caché de actividad y su refresco;
 - errores de red;
-- lectura y escritura de configuracion (incluido tu perfil propio);
-- datos del modo demostracion;
-- construccion de URLs.
+- lectura y escritura de configuración (incluido tu perfil propio);
+- datos del modo demostración;
+- construcción de URLs.
 
 ```powershell
 .\build\Release\srp_tests.exe
@@ -252,42 +300,59 @@ hilo de la interfaz, con tiempos de espera, para que la ventana nunca se bloquee
 
 ---
 
-## Limitaciones y lo que se ha verificado
+## Estado del proyecto y hoja de ruta
+
+**En desarrollo activo.** Lo que ya está sólido está marcado en
+[Limitaciones y verificación](#limitaciones-y-verificación). Lo que sigue son **ideas y mejoras
+en desarrollo o pendientes**, sin fecha y sujetas a cambios:
+
+- [ ] Importar amigos **sin clave de API**, leyendo la caché local del cliente de Steam.
+- [ ] Empaquetado/instalador cómodo (instalador o `.zip` portable) y publicación de versiones.
+- [ ] Integración continua (GitHub Actions) que compile y ejecute las pruebas en cada push.
+- [ ] Historial: evolución de la actividad a lo largo del tiempo, no solo la foto actual.
+- [ ] Exportar la vista general (CSV/imagen) y opciones para compartirla.
+- [ ] Más temas visuales y ajustes de tamaño/tipografía.
+- [ ] Soporte multi-idioma (además del español).
+- [ ] Afinar la detección de juego compartido y los avisos de privacidad por integrante.
+
+> ¿Tienes una idea? Abre un *issue* describiendo el caso de uso.
+
+## Limitaciones y verificación
 
 Compromiso de honestidad sobre el estado real del proyecto.
 
-Verificado con una **clave de API real** durante el desarrollo (en un equipo con Steam
+**Verificado con una clave de API real** durante el desarrollo (en un equipo con Steam
 instalado):
 
 - `GetRecentlyPlayedGames` y `GetPlayerSummaries` devuelven actividad, nombres y avatares
   reales para varios integrantes.
-- La **importacion automatica** funciona de extremo a extremo:
+- La **importación automática** funciona de extremo a extremo:
   - **Familia:** detecta la cuenta local, lee el grupo familiar de `localconfig.vdf` y carga los
     nombres de sus miembros con `GetPlayerSummaries` (probado con un grupo familiar real de 5
     miembros).
   - **Amigos:** lee `GetFriendList` y carga los nombres de los amigos con `GetPlayerSummaries`.
 - Carga de portadas desde el CDN de Steam.
 
-No verificado / limitaciones:
+**No verificado / limitaciones conocidas:**
 
 - La ruta de **lista de amigos privada** (error 401) y el mapeo exacto de otros errores (clave
-  invalida, limite de peticiones 429) no se han ejercitado contra el servicio real; en las
+  inválida, límite de peticiones 429) no se han ejercitado contra el servicio real; en las
   pruebas se cubren con datos de ejemplo.
-- La deteccion de tu propia cuenta depende del cliente de Steam instalado; si falta, la app te
+- La detección de tu propia cuenta depende del cliente de Steam instalado; si falta, la app te
   pide tu perfil una sola vez.
-- El **grupo familiar** depende de que Steam este instalado y haya descargado la copia local
-  (`userdata/<cuenta>/config/localconfig.vdf`); si el cliente nunca ha abierto la seccion
-  Familia, el bloque puede no existir todavia y la app lo indica.
-- El modo demostracion usa **datos ficticios**; no representa a ninguna persona real.
-- No representa ningun tipo de "disponibilidad de copias" ni estado en tiempo real.
+- El **grupo familiar** depende de que Steam esté instalado y haya descargado la copia local
+  (`userdata/<cuenta>/config/localconfig.vdf`); si el cliente nunca ha abierto la sección
+  Familia, el bloque puede no existir todavía y la app lo indica.
+- El modo demostración usa **datos ficticios**; no representa a ninguna persona real.
+- No representa ningún tipo de "disponibilidad de copias" ni estado en tiempo real.
 
-Verificado en el entorno de desarrollo:
+**Verificado en el entorno de desarrollo:**
 
-- Compilacion limpia en Release, sin avisos en el codigo del proyecto.
+- Compilación limpia en Release, sin avisos en el código del proyecto.
 - `WATAP.exe` (~586 KiB) y `srp_tests.exe`.
-- Arranque de la aplicacion y estabilidad de la ventana principal.
+- Arranque de la aplicación y estabilidad de la ventana principal.
 - Interfaz completa revisada por capturas: vistas "Juegos recientes"/"Vista general"/integrante y
-  los dialogos de Integrante, Ajustes, Clave API, Importar integrantes y Acerca de.
+  los diálogos de Integrante, Ajustes, Clave API, Importar integrantes y Acerca de.
 - Las 118 comprobaciones de `srp_tests` pasan.
 
 ---
@@ -295,22 +360,32 @@ Verificado en el entorno de desarrollo:
 ## Estructura del proyecto
 
 ```
-CMakeLists.txt          definicion de objetivos (srp_core, WATAP, srp_tests)
-build.ps1               compilacion/pruebas por linea de comandos
-resources\              manifiesto, icono, plantillas de dialogo (.rc) y resource.h
+CMakeLists.txt          definición de objetivos (srp_core, WATAP, srp_tests)
+build.ps1               compilación/pruebas por línea de comandos
+docs\                   capturas para la documentación
+resources\              manifiesto, icono, plantillas de diálogo (.rc) y resource.h
 src\main.cpp            punto de entrada (wWinMain, GDI+, bucle de mensajes)
-src\ui\                 interfaz: ventana, temas, dibujo, dialogos, hilo de trabajo, cache de imagenes
-src\steam\              cliente HTTP (WinHTTP), API de Steam, deteccion local (cuenta y grupo familiar) y datos demo
-src\storage\            configuracion en JSON, cache en disco y credenciales (Credential Manager)
+src\ui\                 interfaz: ventana, temas, dibujo, diálogos, hilo de trabajo, caché de imágenes
+src\steam\              cliente HTTP (WinHTTP), API de Steam, detección local (cuenta y grupo familiar) y datos demo
+src\storage\            configuración en JSON, caché en disco y credenciales (Credential Manager)
 src\common\             modelos compartidos, formateo y rutas/utilidades
-tests\test_main.cpp     pruebas de consola de la logica no visual
-third_party\nlohmann\   json.hpp (cabecera unica)
+tests\test_main.cpp     pruebas de consola de la lógica no visual
+third_party\nlohmann\   json.hpp (cabecera única)
 ```
 
-La logica no visual vive en `srp_core` y se puede probar sin abrir una ventana; la interfaz esta
+La lógica no visual vive en `srp_core` y se puede probar sin abrir una ventana; la interfaz está
 separada en `src\ui`.
 
----
+## Tecnologías
+
+| Área | Elección |
+|---|---|
+| Lenguaje | C++20 (MSVC) |
+| Interfaz | Win32 API nativa, dibujada a mano sobre GDI+ (controles nativos oscurecidos) |
+| Red | WinHTTP |
+| Datos | `nlohmann/json` (cabecera incluida) |
+| Secretos | Administrador de credenciales de Windows (`CredWriteW`/`CredReadW`) |
+| Compilación | CMake + Ninja + MSVC |
 
 ## Licencia
 
