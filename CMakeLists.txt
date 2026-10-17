@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Steam Recent Play - visor ultraligero de actividad reciente de una familia de Steam.
+# What Are They Actually Playing? (WATAP) - visor ultraligero de actividad reciente de una familia de Steam.
 # Aplicacion nativa Win32 (C++20) sin dependencias de runtime externas.
 
-project(SteamRecentPlay
+project(WATAP
     VERSION 1.0.0
     DESCRIPTION "Visor ultraligero de actividad reciente de una familia de Steam"
     LANGUAGES CXX RC)
@@ -76,7 +76,7 @@ if(NOT MSVC)
 endif()
 
 # --- Aplicacion GUI ---
-add_executable(SteamRecentPlay WIN32
+add_executable(WATAP WIN32
     src/main.cpp
     src/ui/app.cpp
     src/ui/theme.cpp
@@ -89,9 +89,9 @@ add_executable(SteamRecentPlay WIN32
     resources/app.manifest
 )
 
-target_include_directories(SteamRecentPlay PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/resources)
+target_include_directories(WATAP PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
-target_link_libraries(SteamRecentPlay PRIVATE
+target_link_libraries(WATAP PRIVATE
     srp_core
     gdiplus
     comctl32
@@ -104,8 +104,8 @@ target_link_libraries(SteamRecentPlay PRIVATE
     shlwapi
 )
 
-set_target_properties(SteamRecentPlay PROPERTIES
-    OUTPUT_NAME "SteamRecentPlay"
+set_target_properties(WATAP PROPERTIES
+    OUTPUT_NAME "WATAP"
 )
 
 # --- Pruebas (consola, sin UI) ---
@@ -119,4 +119,4 @@ enable_testing()
 add_test(NAME srp_tests COMMAND srp_tests)
 
 # --- Instalacion simple ---
-install(TARGETS SteamRecentPlay RUNTIME DESTINATION .)
+install(TARGETS WATAP RUNTIME DESTINATION .)

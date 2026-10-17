@@ -51,7 +51,7 @@ std::wstring Widen(const std::string& s) { return Utf8ToWide(s); }
 
 }  // namespace
 
-HttpClient::HttpClient() : userAgent_("SteamRecentPlay/1.0 (Windows; WinHTTP)") {}
+HttpClient::HttpClient() : userAgent_("WATAP/1.0 (Windows; WinHTTP)") {}
 
 HttpClient::~HttpClient() = default;
 

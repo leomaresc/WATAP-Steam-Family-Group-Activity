@@ -541,7 +541,7 @@ void TestLocalFamilyGroup() {
 }  // namespace
 
 int main() {
-    std::printf("Steam Recent Play - pruebas de la logica no visual\n\n");
+    std::printf("What Are They Actually Playing? - pruebas de la logica no visual\n\n");
 
     TestFormatMinutes();
     TestProfileInput();

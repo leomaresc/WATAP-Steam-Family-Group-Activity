@@ -1,4 +1,4 @@
-# Compila Steam Recent Play con MSVC + Ninja desde la linea de comandos.
+# Compila "What Are They Actually Playing?" (WATAP) con MSVC + Ninja desde la linea de comandos.
 # Uso:
 #   powershell -ExecutionPolicy Bypass -File .\build.ps1            # Release
 #   powershell -ExecutionPolicy Bypass -File .\build.ps1 -Config Debug
@@ -52,7 +52,7 @@ $build = "call `"$vcvars`" >nul && `"$cmake`" --build `"$buildDir`" --config $Co
 cmd /c $build
 if ($LASTEXITCODE -ne 0) { throw "Fallo la compilacion." }
 
-$exe = Join-Path $buildDir "SteamRecentPlay.exe"
+$exe = Join-Path $buildDir "WATAP.exe"
 if (Test-Path $exe) {
     $sizeKb = [math]::Round((Get-Item $exe).Length / 1KB, 1)
     Write-Host ""

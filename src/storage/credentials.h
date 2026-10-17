@@ -18,4 +18,8 @@ bool DeleteApiKey(std::string& errorOut);
 // Indica si hay una clave almacenada.
 bool HasApiKey();
 
+// Migra la clave guardada con el nombre antiguo (SteamRecentPlay/...) al nombre
+// actual (WATAP/...). Se llama una vez al arrancar; no hace nada si ya existe.
+void MigrateLegacyCredentials();
+
 }  // namespace srp::creds

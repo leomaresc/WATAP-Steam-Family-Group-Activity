@@ -1,4 +1,4 @@
-﻿// Punto de entrada de Steam Recent Play.
+﻿// Punto de entrada de "What Are They Actually Playing?" (WATAP).
 //
 // Inicializa GDI+ y los controles comunes, activa el modo oscuro de la interfaz
 // nativa y ejecuta el bucle de mensajes de la ventana principal.
@@ -9,6 +9,7 @@
 #include <gdiplus.h>
 
 #include "common/paths.h"
+#include "storage/credentials.h"
 #include "ui/app.h"
 #include "ui/darkmode.h"
 
@@ -17,7 +18,8 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE /*previous*/, PWSTR /*comman
     Gdiplus::GdiplusStartupInput gdiplusInput;
     ULONG_PTR gdiplusToken = 0;
     if (Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusInput, nullptr) != Gdiplus::Ok) {
-        MessageBoxW(nullptr, L"No se pudo iniciar GDI+.", L"Steam Recent Play", MB_ICONERROR);
+        MessageBoxW(nullptr, L"No se pudo iniciar GDI+.", L"What Are They Actually Playing?",
+                    MB_ICONERROR);
         return 1;
     }
 
@@ -32,6 +34,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE /*previous*/, PWSTR /*comman
 
     srp::ui::EnableDarkModeForApp();
     srp::EnsureDataDirs();
+    srp::creds::MigrateLegacyCredentials();
 
     int exitCode = 0;
     if (!srp::ui::MainWindow::RegisterWindowClass(instance)) {

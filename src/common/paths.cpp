@@ -25,10 +25,49 @@ std::filesystem::path LocalAppDataRoot() {
     return std::filesystem::temp_directory_path();
 }
 
+// Copia de respaldo por si el renombrado directo del directorio falla.
+bool CopyTreeFallback(const std::filesystem::path& from, const std::filesystem::path& to) {
+    std::error_code ec;
+    for (std::filesystem::recursive_directory_iterator it(from, ec), end; !ec && it != end;
+         it.increment(ec)) {
+        const std::filesystem::path relative = std::filesystem::relative(it->path(), from, ec);
+        if (ec) return false;
+        const std::filesystem::path destination = to / relative;
+        if (it->is_directory(ec)) {
+            std::filesystem::create_directories(destination, ec);
+        } else {
+            std::filesystem::create_directories(destination.parent_path(), ec);
+            std::filesystem::copy_file(it->path(), destination,
+                                       std::filesystem::copy_options::overwrite_existing, ec);
+        }
+        if (ec) return false;
+        ec.clear();
+    }
+    return !ec;
+}
+
+// Mueve %LOCALAPPDATA%\SteamRecentPlay a %LOCALAPPDATA%\WATAP la primera vez,
+// para conservar configuracion y cache de la version anterior.
+void MigrateLegacyDataDir() {
+    const std::filesystem::path base = LocalAppDataRoot();
+    const std::filesystem::path current = base / L"WATAP";
+    const std::filesystem::path legacy = base / L"SteamRecentPlay";
+    std::error_code ec;
+    if (std::filesystem::exists(current, ec)) return;
+    if (!std::filesystem::is_directory(legacy, ec)) return;
+    std::filesystem::rename(legacy, current, ec);
+    if (ec) {
+        ec.clear();
+        if (CopyTreeFallback(legacy, current)) {
+            std::filesystem::remove_all(legacy, ec);
+        }
+    }
+}
+
 }  // namespace
 
 std::filesystem::path AppDataDir() {
-    static const std::filesystem::path root = LocalAppDataRoot() / L"SteamRecentPlay";
+    static const std::filesystem::path root = LocalAppDataRoot() / L"WATAP";
     return root;
 }
 
@@ -45,6 +84,7 @@ std::filesystem::path ImageCacheDir() {
 }
 
 bool EnsureDataDirs() {
+    MigrateLegacyDataDir();
     std::error_code ec;
     std::filesystem::create_directories(AppDataDir(), ec);
     ec.clear();

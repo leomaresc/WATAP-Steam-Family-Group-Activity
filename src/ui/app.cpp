@@ -1,4 +1,4 @@
-﻿// Ventana principal de Steam Recent Play.
+﻿// Ventana principal de "What Are They Actually Playing?" (WATAP).
 //
 // Toda la interfaz se dibuja a mano sobre GDI+ (salvo el campo de busqueda y los
 // desplegables, que son controles nativos oscurecidos). La red y las imagenes se
@@ -37,7 +37,7 @@
 namespace srp::ui {
 namespace {
 
-constexpr wchar_t kClassName[] = L"SteamRecentPlayMainWindow";
+constexpr wchar_t kClassName[] = L"WATAPMainWindow";
 
 constexpr int kSearchId = 2001;
 constexpr int kFilterId = 2002;
@@ -124,7 +124,7 @@ bool MainWindow::RegisterWindowClass(HINSTANCE instance) {
 
 bool MainWindow::Create(HINSTANCE instance, int showCommand) {
     instance_ = instance;
-    hwnd_ = CreateWindowExW(0, kClassName, L"Steam Recent Play",
+    hwnd_ = CreateWindowExW(0, kClassName, L"What Are They Actually Playing?",
                             WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
                             1200, 780, nullptr, nullptr, instance, this);
     if (hwnd_ == nullptr) return false;
@@ -966,6 +966,18 @@ bool MainWindow::OpenUrl(const std::string& url) const {
 
 void MainWindow::HandleHit(const HitRegion& region) {
     switch (region.kind) {
+        case Hit::Title: {
+            // Guino oculto: diez clics seguidos sobre el titulo lo cambian (y lo restauran).
+            const ULONGLONG now = GetTickCount64();
+            if (now - titleLastClickTick_ > 1500) titleClickCount_ = 0;
+            titleLastClickTick_ = now;
+            if (++titleClickCount_ >= 10) {
+                titleClickCount_ = 0;
+                titleEasterEgg_ = !titleEasterEgg_;
+            }
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            break;
+        }
         case Hit::RefreshSelected:
             RefreshProfiles(false);
             break;
@@ -1747,10 +1759,17 @@ void MainWindow::DrawHeader(Gdiplus::Graphics& g) {
              theme_.border);
 
     const float pad = static_cast<float>(theme_.Px(18));
-    DrawTextIn(g, L"Steam Recent Play", *theme_.fontBig,
-               Gdiplus::RectF(pad, static_cast<float>(rcHeader_.top + theme_.Px(8)),
-                              static_cast<float>(rcClient_.right) * 0.5f,
-                              static_cast<float>(theme_.Px(26))),
+    const std::wstring title = titleEasterEgg_ ? L"What are this assholes playing"
+                                               : L"What Are They Actually Playing?";
+    const float titleTop = static_cast<float>(rcHeader_.top + theme_.Px(8));
+    const float titleHeight = static_cast<float>(theme_.Px(26));
+    const float titleWidth = MeasureTextWidth(g, title, *theme_.fontBig);
+    rcTitle_ = {static_cast<LONG>(pad), static_cast<LONG>(titleTop),
+                static_cast<LONG>(pad + titleWidth), static_cast<LONG>(titleTop + titleHeight)};
+    AddHit(Hit::Title, rcTitle_);
+    DrawTextIn(g, title, *theme_.fontBig,
+               Gdiplus::RectF(pad, titleTop, static_cast<float>(rcClient_.right) * 0.5f,
+                              titleHeight),
                theme_.text, Gdiplus::StringAlignmentNear, false, true);
     DrawTextIn(g, Widen("Actividad reciente de la familia · ultimas dos semanas"),
                *theme_.fontSmall,

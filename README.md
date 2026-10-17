@@ -1,4 +1,4 @@
-# Steam Recent Play
+# What Are They Actually Playing? (WATAP)
 
 Visor **nativo y ultraligero** para Windows que muestra la actividad reciente de Steam de un
 grupo familiar: minutos jugados en las dos ultimas semanas, minutos acumulados, portadas y una
@@ -72,7 +72,7 @@ El script localiza Visual Studio con `vswhere`, llama a `vcvars64.bat`, configur
 generador Ninja y compila. Los binarios quedan en:
 
 ```
-build\Release\SteamRecentPlay.exe   (aplicacion GUI)
+build\Release\WATAP.exe             (aplicacion GUI)
 build\Release\srp_tests.exe         (pruebas) 
 ```
 
@@ -89,10 +89,10 @@ ctest --test-dir build\Release --output-on-failure
 
 ## Ejecutar
 
-Doble clic sobre `build\Release\SteamRecentPlay.exe`, o desde la terminal:
+Doble clic sobre `build\Release\WATAP.exe`, o desde la terminal:
 
 ```powershell
-.\build\Release\SteamRecentPlay.exe
+.\build\Release\WATAP.exe
 ```
 
 En el primer arranque, si no hay integrantes ni clave de API, se activa el **modo
@@ -111,7 +111,7 @@ interfaz sin credenciales.
    contra Steam antes de usarla.
 
 La clave se guarda **unicamente** en el Administrador de credenciales de Windows, con el
-nombre de destino `SteamRecentPlay/SteamWebApiKey`. **Nunca** se escribe en `config.json`, en el
+nombre de destino `WATAP/SteamWebApiKey`. **Nunca** se escribe en `config.json`, en el
 codigo fuente, en los registros ni se pasa por la linea de comandos. Puedes borrarla con el
 boton **Eliminar** de ese mismo dialogo, o desde el Administrador de credenciales.
 
@@ -192,13 +192,18 @@ que no se ha jugado.
 
 ## Datos locales
 
-Todo se guarda en `%LOCALAPPDATA%\SteamRecentPlay`:
+Todo se guarda en `%LOCALAPPDATA%\WATAP`:
 
 ```
 config.json          integrantes, preferencias y tu propio SteamID (nunca la clave de API)
 cache\               respuestas de la API en cache
 cache\images\        portadas descargadas
 ```
+
+> Version anterior: la app se llamaba **Steam Recent Play**. La primera vez que arranca, si
+> existe `%LOCALAPPDATA%\SteamRecentPlay` y todavia no hay `%LOCALAPPDATA%\WATAP`, se mueve el
+> directorio completo (configuracion y cache) y la clave de API se traslada al nuevo nombre de
+> credencial (`WATAP/SteamWebApiKey`). No hay que volver a configurar nada.
 
 Las escrituras son atomicas (archivo temporal + reemplazo) y se agrupan para no castigar el
 disco. La red y las descargas de imagenes se ejecutan en un unico hilo de trabajo, fuera del
@@ -279,7 +284,7 @@ No verificado / limitaciones:
 Verificado en el entorno de desarrollo:
 
 - Compilacion limpia en Release, sin avisos en el codigo del proyecto.
-- `SteamRecentPlay.exe` (~568 KiB) y `srp_tests.exe`.
+- `WATAP.exe` (~586 KiB) y `srp_tests.exe`.
 - Arranque de la aplicacion y estabilidad de la ventana principal.
 - Interfaz completa revisada por capturas: vistas "Juegos recientes"/"Vista general"/integrante y
   los dialogos de Integrante, Ajustes, Clave API, Importar integrantes y Acerca de.
@@ -290,7 +295,7 @@ Verificado en el entorno de desarrollo:
 ## Estructura del proyecto
 
 ```
-CMakeLists.txt          definicion de objetivos (srp_core, SteamRecentPlay, srp_tests)
+CMakeLists.txt          definicion de objetivos (srp_core, WATAP, srp_tests)
 build.ps1               compilacion/pruebas por linea de comandos
 resources\              manifiesto, icono, plantillas de dialogo (.rc) y resource.h
 src\main.cpp            punto de entrada (wWinMain, GDI+, bucle de mensajes)

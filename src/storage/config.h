@@ -1,4 +1,4 @@
-// Persistencia de la configuracion en %LOCALAPPDATA%\SteamRecentPlay\config.json
+// Persistencia de la configuracion en %LOCALAPPDATA%\WATAP\config.json
 // La clave de API NUNCA se guarda aqui: vive en el Administrador de credenciales.
 #pragma once
 

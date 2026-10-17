@@ -66,6 +66,7 @@ private:
     // Tipos de zona interactiva.
     enum class Hit {
         None,
+        Title,
         RefreshSelected,
         RefreshAll,
         Settings,
@@ -250,13 +251,17 @@ private:
     bool draggingSidebar_ = false;
     bool draggingContent_ = false;
 
+    // Guino oculto: 10 clics seguidos sobre el titulo cambian el texto.
+    int titleClickCount_ = 0;
+    ULONGLONG titleLastClickTick_ = 0;
+    bool titleEasterEgg_ = false;
+
     int64_t lastRefreshUnix_ = 0;
     std::string statusMessage_;
     bool refreshing_ = false;
 
     // Controles nativos
-    HWND searchEdit_ = nullptr;
-    HWND filterCombo_ = nullptr;
+    HWND searchEdit_ = nullptr;    HWND filterCombo_ = nullptr;
     HWND sortCombo_ = nullptr;
     HFONT uiFont_ = nullptr;
     HBRUSH editBrush_ = nullptr;
@@ -296,6 +301,7 @@ private:
     RECT rcSearchClear_{};
     RECT rcSidebarTrack_{};
     RECT rcContentTrack_{};
+    RECT rcTitle_{};
 };
 
 }  // namespace srp::ui

@@ -6,7 +6,7 @@
 
 namespace srp {
 
-// Directorio raiz de datos: %LOCALAPPDATA%\SteamRecentPlay
+// Directorio raiz de datos: %LOCALAPPDATA%\WATAP
 std::filesystem::path AppDataDir();
 
 // Subdirectorios concretos.
@@ -15,6 +15,8 @@ std::filesystem::path ActivityCacheDir();
 std::filesystem::path ImageCacheDir();
 
 // Crea los directorios necesarios si no existen. Devuelve false si no se pudo.
+// Antes de crearlos migra, si procede, el directorio de la version anterior
+// (%LOCALAPPDATA%\SteamRecentPlay) para no perder configuracion ni cache.
 bool EnsureDataDirs();
 
 // Hash FNV-1a de 64 bits en hexadecimal, usado para nombrar archivos de imagen.
